@@ -1,0 +1,107 @@
+[
+  {
+    "id": "deps-001",
+    "category": "dependencies",
+    "description": "Update Prisma to latest compatible version (6.19.0+)",
+    "acceptance": [
+      "npm outdated | grep prisma shows no major updates available",
+      "npx prisma validate exits with code 0",
+      "npm run build completes successfully",
+      "All existing database tests pass"
+    ],
+    "passes": false,
+    "priority": 1
+  },
+  {
+    "id": "deps-002",
+    "category": "dependencies",
+    "description": "Update Next.js to 15.5.4+",
+    "acceptance": [
+      "package.json shows next@15.5.4 or higher",
+      "npm run build completes successfully",
+      "npm run dev starts without errors",
+      "All pages render correctly"
+    ],
+    "passes": false,
+    "priority": 1
+  },
+  {
+    "id": "refactor-001",
+    "category": "refactoring",
+    "description": "Extract duplicate extraction logic into reusable service",
+    "acceptance": [
+      "Service class exists at src/lib/extraction/extractionService.ts",
+      "All extraction API routes import and use the service",
+      "Grep for duplicate extraction patterns returns 0 matches",
+      "npx tsc --noEmit shows no type errors",
+      "All extraction tests pass"
+    ],
+    "passes": false,
+    "priority": 2
+  },
+  {
+    "id": "refactor-002",
+    "category": "refactoring",
+    "description": "Consolidate authorization checks into middleware",
+    "acceptance": [
+      "Middleware exists at src/middleware/authorize.ts",
+      "All protected routes use the middleware",
+      "No direct authorization checks in route handlers",
+      "Authorization tests cover all protected endpoints"
+    ],
+    "passes": false,
+    "priority": 1
+  },
+  {
+    "id": "cleanup-001",
+    "category": "cleanup",
+    "description": "Remove unused imports and dead code",
+    "acceptance": [
+      "npm run lint shows 0 unused import warnings",
+      "No commented-out code blocks remain (checked via grep)",
+      "All exported functions are used (checked via Grep)",
+      "Build size reduced by at least 5%"
+    ],
+    "passes": false,
+    "priority": 3
+  },
+  {
+    "id": "cleanup-002",
+    "category": "cleanup",
+    "description": "Fix all TypeScript strict mode errors",
+    "acceptance": [
+      "tsconfig.json has strict: true enabled",
+      "npx tsc --noEmit exits with code 0",
+      "No @ts-ignore comments added",
+      "All implicit any types resolved"
+    ],
+    "passes": false,
+    "priority": 2
+  },
+  {
+    "id": "config-001",
+    "category": "config",
+    "description": "Add environment variable validation at startup",
+    "acceptance": [
+      "Validation function exists in src/lib/config/validateEnv.ts",
+      "Function called at app startup (in layout or middleware)",
+      "Missing required env vars cause app to fail fast with clear error",
+      "All required env vars documented in .env.example"
+    ],
+    "passes": false,
+    "priority": 2
+  },
+  {
+    "id": "docs-001",
+    "category": "docs",
+    "description": "Update README with current architecture",
+    "acceptance": [
+      "README.md describes current tech stack accurately",
+      "All setup instructions are up-to-date and tested",
+      "Architecture diagram reflects current structure",
+      "API documentation links are valid"
+    ],
+    "passes": false,
+    "priority": 3
+  }
+]
