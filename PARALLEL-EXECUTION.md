@@ -9,12 +9,18 @@ The TDD pipeline supports safe parallel execution using **git worktrees**.
 ```bash
 # Terminal 1
 ./run-isolated.sh "Add user authentication"
+# Creates: feature/add-user-authentication FROM development
 
 # Terminal 2 (at the same time!)
 ./run-isolated.sh "Add payment processing"
+# Creates: feature/add-payment-processing FROM development
 
 # Terminal 3 (why not?)
 ./run-isolated.sh "Add email notifications"
+# Creates: feature/add-email-notifications FROM development
+
+# For hotfixes on main
+BASE_BRANCH=main ./run-isolated.sh "Critical security fix"
 ```
 
 Each pipeline runs in complete isolation with **zero conflicts**.
@@ -158,6 +164,22 @@ git worktree prune
 
 ## Environment Variables
 
+### `BASE_BRANCH`
+Base branch to create features from:
+
+```bash
+# Default: development
+./run-isolated.sh "Add feature"
+
+# Use main for hotfixes
+BASE_BRANCH=main ./run-isolated.sh "Emergency fix"
+
+# Use staging for staging features
+BASE_BRANCH=staging ./run-isolated.sh "Test new feature"
+```
+
+Default: `development`
+
 ### `WORKTREE_BASE`
 Change where worktrees are created:
 
@@ -166,8 +188,6 @@ WORKTREE_BASE=/path/to/worktrees ./run-isolated.sh "Add feature"
 ```
 
 Default: `/tmp/tdd-worktrees`
-
----
 
 ---
 
