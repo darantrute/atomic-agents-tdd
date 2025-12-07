@@ -14,7 +14,7 @@ Creates detailed acceptance criteria before implementation begins. This ensures 
 TASK_DESCRIPTION: $1
 
 ## Instructions
-- Generate 5-15 test cases (not 200!)
+- Generate test cases
 - Each test has: id, category, description, acceptance criteria, passes=false
 - Order by priority: fundamental first
 - Be specific with acceptance criteria (verifiable commands)
@@ -25,18 +25,52 @@ TASK_DESCRIPTION: $1
 
 ## Workflow
 
-### Step 1: Understand the Task
+### Step 1: Check for Architecture Map
+First, check if an ARCHITECTURE_MAP file path is provided in the task description.
+
+If you see: `ARCHITECTURE_MAP: specs/chore-DDMMYY-HHMM-architecture.json`
+- **READ THIS FILE FIRST** using the Read tool
+- The architecture map contains the AUTHORITATIVE requirements
+- Use it as the source of truth for what components need tests
+- Generate tests covering ALL infrastructure, API routes, data models, and features in the map
+
+If NO architecture map is provided:
+- Fall back to inferring requirements from task description (current behavior)
+
+### Step 1.5: Check for Style System
+Check if a STYLE_SYSTEM file path is provided in the task description.
+
+If you see: `STYLE_SYSTEM: specs/style-DDMMYY-HHMM.md`
+- **READ THIS FILE** using the Read tool
+- The style system defines visual design requirements
+- Generate tests for style compliance:
+  - Tailwind config matches design tokens
+  - Components use design system classes
+  - Colors match brand palette
+  - Typography scale is followed
+  - Spacing system is consistent
+
+If NO style system is provided:
+- Skip style compliance tests (backward compatible)
+
+### Step 2: Understand the Task
 Read the task description carefully:
 ```
 {TASK_DESCRIPTION}
 ```
 
-**STOP: Only generate tests for THIS EXACT TASK.**
+If architecture map exists:
+- **The map defines the scope** - Generate tests for everything in the map
+- Prioritize tests based on the map's priority levels (critical, high, medium, low)
+- Ensure dependency order (e.g., database tests before API tests)
+
+If no architecture map:
+- **STOP: Only generate tests for THIS EXACT TASK.**
 - Do NOT look for additional work
 - Do NOT add "while we're at it" improvements
 - Stay laser-focused on the task description above
 
-### Step 2: Research Codebase Context
+### Step 3: Research Codebase Context
 Use Grep and Glob to understand **ONLY what's needed for the specific task**:
 - Current state related to the task
 - Files directly affected by the task
@@ -52,6 +86,7 @@ Common categories:
 - **cleanup** - Remove dead code, fix linting
 - **config** - Configuration changes
 - **docs** - Documentation updates
+- **style** - Design system compliance, Tailwind config, visual consistency
 
 ### Step 4: Generate Test Cases
 Create test file in the project directory provided above at `specs/chore-DDMMYY-HHMM-tests.json`:
@@ -79,6 +114,19 @@ Create test file in the project directory provided above at `specs/chore-DDMMYY-
       "All extraction routes import service",
       "No duplicate code detected",
       "npm run build succeeds"
+    ],
+    "passes": false,
+    "priority": 2
+  },
+  {
+    "id": "test-style-001",
+    "category": "style",
+    "description": "Tailwind config matches design system tokens",
+    "acceptance": [
+      "tailwind.config.js exists in project root",
+      "Primary color matches STYLE.md specification",
+      "Typography scale matches design system",
+      "Spacing tokens are defined correctly"
     ],
     "passes": false,
     "priority": 2

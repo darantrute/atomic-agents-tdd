@@ -30,8 +30,41 @@ class AgentFirstPipeline:
         self.base_dir = base_dir
         self.project_dir = project_dir
         self.orch = MarkdownOrchestrator(base_dir, project_dir)
-        self.state = {}  # Track state for extraction markers
+        self.state = {
+            'issues_found': []  # Track issues across implementation groups
+        }
         self.background_tasks = []  # Track async tasks
+
+        # Valid agent names (without the agents/ prefix and .md suffix)
+        self.valid_agents = {
+            "git-setup", "requirements-analyzer", "style-integrator", "test-generator",
+            "chore-planner", "execution-planner", "implementer", "verifier",
+            "bugfinder", "bugfixer", "quick-bugcheck", "metrics-reporter", "continuation"
+        }
+
+    def _validate_agent_path(self, agent_path: str) -> tuple[bool, str]:
+        """
+        Validate that agent path exists and follows correct naming.
+        Returns: (is_valid, error_message)
+        """
+        # Check format
+        if not agent_path.startswith("agents/") or not agent_path.endswith(".md"):
+            return False, f"Agent path must be 'agents/<name>.md', got: {agent_path}"
+
+        # Extract agent name
+        agent_name = agent_path[7:-3]  # Remove "agents/" and ".md"
+
+        # Check if agent is in valid list
+        if agent_name not in self.valid_agents:
+            available = ", ".join(sorted(self.valid_agents))
+            return False, f"Unknown agent '{agent_name}'. Available agents: {available}"
+
+        # Check if file exists
+        agent_file = self.base_dir / agent_path
+        if not agent_file.exists():
+            return False, f"Agent file not found: {agent_file}"
+
+        return True, ""
 
     def create_orchestration_tools(self):
         """
@@ -53,6 +86,15 @@ class AgentFirstPipeline:
                 if not agent_path or not agent_input:
                     return {
                         "content": [{"type": "text", "text": "❌ Error: 'agent_path' and 'agent_input' are required"}],
+                        "is_error": True
+                    }
+
+                # Validate agent path
+                is_valid, error_msg = self._validate_agent_path(agent_path)
+                if not is_valid:
+                    print(f"❌ Invalid agent path: {error_msg}")
+                    return {
+                        "content": [{"type": "text", "text": f"❌ Invalid agent path: {error_msg}"}],
                         "is_error": True
                     }
 
@@ -97,6 +139,22 @@ class AgentFirstPipeline:
                 if not agent_path or not inputs:
                     return {
                         "content": [{"type": "text", "text": "❌ Error: 'agent_path' and 'inputs' are required"}],
+                        "is_error": True
+                    }
+
+                # Validate agent path
+                is_valid, error_msg = self._validate_agent_path(agent_path)
+                if not is_valid:
+                    print(f"❌ Invalid agent path: {error_msg}")
+                    return {
+                        "content": [{"type": "text", "text": f"❌ Invalid agent path: {error_msg}"}],
+                        "is_error": True
+                    }
+
+                # Limit parallel execution to 10 agents max
+                if len(inputs) > 10:
+                    return {
+                        "content": [{"type": "text", "text": f"❌ Error: Too many parallel agents ({len(inputs)}). Maximum is 10. Split into multiple batches."}],
                         "is_error": True
                     }
 
@@ -254,7 +312,25 @@ class AgentFirstPipeline:
             'tests_file': r'TESTS_FILE:\s*(.+)',
             'plan_file': r'PLAN_FILE:\s*(.+)',
             'branch': r'BRANCH:\s*(.+)',
+            'base_commit': r'BASE_COMMIT:\s*(.+)',  # Track pipeline base commit
             'metrics_file': r'REPORT_FILE:\s*(.+)',
+            'architecture_map': r'ARCHITECTURE_MAP:\s*(.+)',
+            'style_system': r'STYLE_SYSTEM:\s*(.+)',
+            'tailwind_config': r'TAILWIND_CONFIG:\s*(.+)',
+            # Bugfinder markers
+            'bugfinder_report': r'BUGFINDER_REPORT:\s*(.+)',
+            'critical_issues': r'CRITICAL_ISSUES:\s*(\d+)',
+            'high_priority': r'HIGH_PRIORITY:\s*(\d+)',
+            # Bugfixer markers
+            'bugfixer_report': r'BUGFIXER_REPORT:\s*(.+)',
+            'issues_fixed': r'ISSUES_FIXED:\s*(\d+)',
+            'issues_skipped': r'ISSUES_SKIPPED:\s*(\d+)',
+            'all_critical_fixed': r'ALL_CRITICAL_FIXED:\s*(yes|no)',
+            # Quick bugcheck markers
+            'security_issues': r'SECURITY_ISSUES:\s*(\d+)',
+            'type_errors': r'TYPE_ERRORS:\s*(\d+)',
+            'error_handling_issues': r'ERROR_HANDLING_ISSUES:\s*(\d+)',
+            'lint_errors': r'LINT_ERRORS:\s*(\d+)',
         }
 
         for key, pattern in markers.items():
@@ -324,12 +400,19 @@ Call: run_agent(agent_path="agents/execution-planner.md", agent_input="{{tests_f
 This tells you which tests can run in parallel.
 
 ### Phase 5: Implementation & Verification
-For each execution group:
-- If PARALLEL: Call run_agents_parallel with list of inputs like ["{{plan_file}} test-001", "{{plan_file}} test-002"]
-- If SEQUENTIAL: Call run_agent for each test individually
+CRITICAL: Use EXACT agent paths - do NOT modify or prefix agent names!
 
-Then verify:
-- Call run_agents_parallel for verifiers: ["{{tests_file}} test-001", "{{tests_file}} test-002"]
+For implementation, use ONLY: agent_path="agents/implementer.md"
+For verification, use ONLY: agent_path="agents/verifier.md"
+
+For each execution group from Phase 4:
+- If PARALLEL (2-10 tests): Call run_agents_parallel(agent_path="agents/implementer.md", inputs=["{{plan_file}} test-001", "{{plan_file}} test-002"])
+  IMPORTANT: Maximum 10 tests per parallel batch! If more than 10, split into multiple batches.
+- If SEQUENTIAL (1 test): Call run_agent(agent_path="agents/implementer.md", agent_input="{{plan_file}} test-001")
+
+Then verify the same tests:
+- Call run_agents_parallel(agent_path="agents/verifier.md", inputs=["{{tests_file}} test-001", "{{tests_file}} test-002"])
+  Again: Maximum 10 verifiers per batch!
 
 Report progress after each group!
 
@@ -365,13 +448,14 @@ Begin by running git-setup, then follow the phases above.
             cwd=self.project_dir,
             mcp_servers={
                 "pipeline": mcp_server,
-                "ref": {
-                    "transport": "http",
-                    "url": "https://api.ref.tools/mcp",
-                    "headers": {
-                        "x-ref-api-key": REF_API_KEY
-                    }
-                }
+                # Ref.tools HTTP MCP disabled - SDK CLI doesn't support it yet
+                # "ref": {
+                #     "transport": "http",
+                #     "url": "https://api.ref.tools/mcp",
+                #     "headers": {
+                #         "x-ref-api-key": REF_API_KEY
+                #     }
+                # }
             },
             allowed_tools=[
                 "mcp__pipeline__run_agent",

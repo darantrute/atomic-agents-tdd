@@ -73,6 +73,22 @@ Validation:
 Test status: Pending verification"
 ```
 
+**IMPORTANT**: If the commit fails due to pre-commit hooks AND the failure is UNRELATED to your changes:
+- Check if TypeScript and linting passed for YOUR changes
+- If the build error is in a different file/feature, use `--no-verify`:
+```bash
+git commit --no-verify -m "Implement {TEST_ID}: {test.description}
+
+- {specific_change_1}
+
+Validation:
+- TypeScript: passed
+- Linting: passed
+- Build: failed (unrelated to {TEST_ID})
+
+Note: Using --no-verify due to pre-existing build error in unrelated code"
+```
+
 ### Step 6: Update Progress
 Update `progress.txt`:
 ```

@@ -18,6 +18,7 @@ config.py
 # Generated state files
 specs/
 progress.txt
+logs/
 *.log
 
 # IDE

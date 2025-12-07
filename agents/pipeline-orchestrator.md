@@ -70,14 +70,63 @@ Call the run_agent tool to setup git branch:
 - Call run_agent with git-setup agent
 - Python will automatically extract BRANCH marker
 
-### Phase 1: Generate Tests
-Call run_agent with test-generator:
+### Phase 0.5: Requirements Analysis (NEW!)
+Call run_agent with requirements-analyzer:
 - Pass the task description as agent_input
+- Python will automatically extract ARCHITECTURE_MAP marker
+- Use get_state() to retrieve architecture_map path
+
+Call report_progress:
+- message: "Analyzed requirements and mapped technical architecture"
+
+Example:
+```
+Tool: run_agent
+agent_path: "agents/requirements-analyzer.md"
+agent_input: "Create analytics platform..."
+```
+
+This creates: `specs/chore-DDMMYY-HHMM-architecture.json`
+
+### Phase 0.6: Style Integration (NEW!)
+Call run_agent with style-integrator:
+- Use get_state() to retrieve architecture_map path (from Phase 0.5)
+- Pass architecture_map path as agent_input
+- Python will automatically extract STYLE_SYSTEM and TAILWIND_CONFIG markers
+- Use get_state() to retrieve style_system and tailwind_config paths
+
+Call report_progress:
+- message: "Applied design system based on project architecture"
+
+Example:
+```
+Tool: run_agent
+agent_path: "agents/style-integrator.md"
+agent_input: "specs/chore-051225-1535-architecture.json"
+```
+
+This creates:
+- `specs/style-DDMMYY-HHMM.md`
+- `specs/tailwind-config-DDMMYY-HHMM.js`
+
+### Phase 1: Generate Tests (ENHANCED!)
+Call run_agent with test-generator:
+- Use get_state() to retrieve architecture_map path (from Phase 0.5)
+- Use get_state() to retrieve style_system path (from Phase 0.6)
+- Pass task description, architecture map, AND style system paths as agent_input
+- Format: "{task}\n\nARCHITECTURE_MAP: {architecture_map_path}\n\nSTYLE_SYSTEM: {style_system_path}"
 - Python will automatically extract TESTS_FILE marker
 - Use get_state() to retrieve tests_file path
 
+Example:
+```
+Tool: run_agent
+agent_path: "agents/test-generator.md"
+agent_input: "Create analytics platform\n\nARCHITECTURE_MAP: specs/chore-051225-1535-architecture.json\n\nSTYLE_SYSTEM: specs/style-051225-1536.md"
+```
+
 Call report_progress to update user:
-- message: "Generated test acceptance criteria"
+- message: "Generated comprehensive test acceptance criteria from architecture map and style system"
 
 ### Phase 2: Create Implementation Plan
 Call run_agent with chore-planner:
@@ -122,13 +171,132 @@ After each group, verify with run_agents_parallel:
 - agent_path: "agents/verifier.md"
 - inputs: ["{tests_file} test-001", "{tests_file} test-002"]
 
+**NEW: Quick Bug Check After Each Group**
+After verification completes, run lightweight bug check:
+- Call run_agent: "agents/quick-bugcheck.md"
+- agent_input: "{group_number}"
+
+This runs fast (~10 seconds) quality checks:
+- TypeScript errors in new code
+- ESLint on changed files
+- Obvious security patterns (eval, innerHTML)
+- Missing error handling
+
+Extract markers (automatic):
+- SECURITY_ISSUES: {count}
+- TYPE_ERRORS: {count}
+- ERROR_HANDLING_ISSUES: {count}
+
+If issues found (count > 0):
+- Add to state['issues_found'] for next group
+- Next implementer will be warned about patterns to avoid
+
 Call report_progress after each group:
 - message: "Group 1 complete (2/10 tests implemented and verified)"
+- Include quick-bugcheck status if issues found
 
 ### Phase 5: Bug Check
-Call run_agent with bugfinder:
+
+Use get_state() to retrieve base_commit (from Phase 0)
+
+Call run_agent with bugfinder to analyze only pipeline changes:
 - agent_path: "agents/bugfinder.md"
-- agent_input: "all"
+- agent_input: "since-branch-start {base_commit}"
+
+This analyzes ONLY the code changes made during this pipeline run (from base commit to current HEAD), not the entire codebase.
+
+**Why this matters:**
+- Focuses on NEW issues introduced by pipeline
+- Avoids false positives from pre-existing code
+- Makes bug reports actionable and relevant
+- Faster analysis than scanning entire codebase
+
+**Fallback:** If base_commit is not available in state, use "all" scope instead.
+
+Example:
+```
+Tool: get_state
+Returns: {"base_commit": "abc1234567890abcdef1234567890abcdef12", ...}
+
+Tool: run_agent
+agent_path: "agents/bugfinder.md"
+agent_input: "since-branch-start abc1234567890abcdef1234567890abcdef12"
+```
+
+Python will extract BUGFINDER_REPORT marker automatically.
+
+### Phase 5.5: Auto-Fix Bugs (NEW!)
+
+Use get_state() to check bugfinder results:
+- CRITICAL_ISSUES: {count}
+- HIGH_PRIORITY: {count}
+
+**If CRITICAL_ISSUES > 0 OR HIGH_PRIORITY > 0:**
+
+Call run_agent with bugfixer to auto-fix issues:
+- agent_path: "agents/bugfixer.md"
+- agent_input: "{bugfinder_report_path}"
+
+Bugfixer will:
+1. Read bugfinder report
+2. Auto-fix deterministic issues (null checks, missing error handling, etc.)
+3. Git commit each fix separately
+4. Skip ambiguous issues (leave for manual review)
+
+Python will extract markers:
+- ISSUES_FIXED: {count}
+- ISSUES_SKIPPED: {count}
+- ALL_CRITICAL_FIXED: {yes|no}
+
+**Re-validate after fixes:**
+If ISSUES_FIXED > 0, re-run bugfinder to verify fixes:
+- Call run_agent: "agents/bugfinder.md"
+- agent_input: "since-branch-start {base_commit}"
+- This validates fixes didn't introduce new issues
+
+**Loop control:**
+Maximum 2 bugfixer iterations to prevent infinite loops:
+- Iteration 1: Fix issues from initial bugfinder
+- Iteration 2: Fix issues from validation run (if any)
+- After iteration 2: Stop, flag remaining issues for manual review
+
+Example workflow:
+```
+Tool: get_state
+Returns: {
+  "bugfinder_report": "specs/bugfinder-051225-1430-report.md",
+  "critical_issues": 2,
+  "high_priority": 3
+}
+
+If critical_issues > 0 or high_priority > 0:
+
+  # Iteration 1: Fix issues
+  Tool: run_agent
+  agent_path: "agents/bugfixer.md"
+  agent_input: "specs/bugfinder-051225-1430-report.md"
+
+  # Validate fixes
+  Tool: run_agent
+  agent_path: "agents/bugfinder.md"
+  agent_input: "since-branch-start abc123..."
+
+  # If new issues found and iteration < 2:
+  Tool: run_agent
+  agent_path: "agents/bugfixer.md"
+  agent_input: "{new_bugfinder_report}"
+
+  # Final validation
+  Tool: run_agent
+  agent_path: "agents/bugfinder.md"
+  agent_input: "since-branch-start abc123..."
+```
+
+Call report_progress:
+- message: "Auto-fixed {count} issues, {count} require manual review"
+
+**If NO HIGH/CRITICAL issues:**
+Skip Phase 5.5 entirely, proceed to Phase 6.
 
 ### Phase 6: Generate Metrics
 Use get_state() to get tests_file and plan_file
