@@ -344,6 +344,30 @@ class AgentFirstPipeline:
         Start conversation with orchestrator agent.
         The agent has tools to control execution.
         """
+        # Check for concurrent execution lock
+        lock_file = self.project_dir / ".pipeline.lock"
+        lock_handle = None
+
+        try:
+            import fcntl
+            lock_handle = open(lock_file, 'w')
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except IOError:
+            print("\n" + "="*70)
+            print("  ⚠️  ANOTHER PIPELINE IS RUNNING IN THIS DIRECTORY")
+            print("="*70)
+            print("\nTo run multiple pipelines in parallel, use git worktrees:")
+            print("  ./run-isolated.sh \"Your feature description\"")
+            print("\nOr create a worktree manually:")
+            print("  git worktree add /tmp/my-worktree main")
+            print("  cd /tmp/my-worktree")
+            print(f"  python {Path(__file__).absolute()} \"Your feature\"")
+            print("\n" + "="*70 + "\n")
+            sys.exit(1)
+        except ImportError:
+            # fcntl not available (Windows) - skip lock check
+            pass
+
         print("\n" + "="*70)
         print("  ATOMIC AGENTS TDD - TRUE AGENT-FIRST (TOOLS-BASED)")
         print("="*70)
@@ -472,27 +496,36 @@ Begin by running git-setup, then follow the phases above.
             permission_mode="acceptEdits",
         )
 
-        # Run orchestrator
-        async with ClaudeSDKClient(options=options) as client:
-            await client.query(f"Begin the TDD pipeline for this task: {task}")
+        try:
+            # Run orchestrator
+            async with ClaudeSDKClient(options=options) as client:
+                await client.query(f"Begin the TDD pipeline for this task: {task}")
 
-            # Process all responses
-            async for message in client.receive_response():
-                # The agent will call tools
-                # Tools execute
-                # Agent gets results
-                # Agent makes decisions
-                pass
+                # Process all responses
+                async for message in client.receive_response():
+                    # The agent will call tools
+                    # Tools execute
+                    # Agent gets results
+                    # Agent makes decisions
+                    pass
 
-        # Wait for any background tasks
-        if self.background_tasks:
-            print("\n⏳ Waiting for background tasks to complete...")
-            await asyncio.gather(*self.background_tasks, return_exceptions=True)
+            # Wait for any background tasks
+            if self.background_tasks:
+                print("\n⏳ Waiting for background tasks to complete...")
+                await asyncio.gather(*self.background_tasks, return_exceptions=True)
 
-        # Final summary
-        print("\n" + "="*70)
-        print("  PIPELINE COMPLETE")
-        print("="*70)
+            # Final summary
+            print("\n" + "="*70)
+            print("  PIPELINE COMPLETE")
+            print("="*70)
+
+        finally:
+            # Release lock
+            if lock_handle:
+                import fcntl
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                lock_handle.close()
+                lock_file.unlink(missing_ok=True)
 
         if self.state:
             print("\n📋 Final State:")

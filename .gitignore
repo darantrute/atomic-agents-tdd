@@ -20,6 +20,7 @@ specs/
 progress.txt
 logs/
 *.log
+.pipeline.lock
 
 # IDE
 .vscode/
