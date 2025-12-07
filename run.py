@@ -39,7 +39,8 @@ class AgentFirstPipeline:
         self.valid_agents = {
             "git-setup", "requirements-analyzer", "style-integrator", "test-generator",
             "chore-planner", "execution-planner", "implementer", "verifier",
-            "bugfinder", "bugfixer", "quick-bugcheck", "metrics-reporter", "continuation"
+            "bugfinder", "bugfixer", "quick-bugcheck", "metrics-reporter", "continuation",
+            "codebase-context-builder", "documentation-generator"
         }
 
     def _validate_agent_path(self, agent_path: str) -> tuple[bool, str]:
@@ -331,6 +332,11 @@ class AgentFirstPipeline:
             'type_errors': r'TYPE_ERRORS:\s*(\d+)',
             'error_handling_issues': r'ERROR_HANDLING_ISSUES:\s*(\d+)',
             'lint_errors': r'LINT_ERRORS:\s*(\d+)',
+            # Codebase Context Builder markers
+            'codebase_context': r'CODEBASE_CONTEXT:\s*(.+)',
+            # Documentation Generator markers
+            'documentation_added': r'DOCUMENTATION_ADDED:\s*(.+)',
+            'files_documented': r'FILES_DOCUMENTED:\s*(\d+)',
         }
 
         for key, pattern in markers.items():

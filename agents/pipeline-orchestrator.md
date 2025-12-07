@@ -109,6 +109,38 @@ This creates:
 - `specs/style-DDMMYY-HHMM.md`
 - `specs/tailwind-config-DDMMYY-HHMM.js`
 
+### Phase 0.7: Codebase Context Discovery (NEW!)
+
+Call run_agent with codebase-context-builder to discover existing patterns:
+- agent_path: "agents/codebase-context-builder.md"
+- agent_input: "." (project root)
+- Python will automatically extract CODEBASE_CONTEXT marker
+- Use get_state() to retrieve codebase_context path
+
+**One-time execution:**
+The agent checks if context file already exists:
+- If exists and < 7 days old: Reuses existing context (saves $1)
+- If exists and > 7 days old: Regenerates (patterns may have changed)
+- If not exists: Performs full analysis
+
+This creates: `specs/codebase-context-DDMMYY-HHMM.json`
+
+Call report_progress:
+- message: "Discovered existing codebase patterns for consistency"
+
+Example:
+```
+Tool: run_agent
+agent_path: "agents/codebase-context-builder.md"
+agent_input: "."
+```
+
+**Why this matters:**
+- Implementer will use this context to generate code matching existing patterns
+- Ensures consistency (if codebase uses Zustand, new code uses Zustand)
+- Prevents style mismatches (if codebase uses Tailwind, new code uses Tailwind)
+- One-time cost ($1), reused for all features
+
 ### Phase 1: Generate Tests (ENHANCED!)
 Call run_agent with test-generator:
 - Use get_state() to retrieve architecture_map path (from Phase 0.5)
@@ -166,6 +198,55 @@ Example:
 Call run_agent for each test:
 - agent_path: "agents/implementer.md"
 - agent_input: "{plan_file} test-001"
+
+### Phase 4.5: Document Implementation (NEW!)
+
+**CRITICAL: Run documentation-generator AFTER implementer, BEFORE verifier**
+
+For each test that was just implemented:
+
+Call run_agent with documentation-generator:
+- agent_path: "agents/documentation-generator.md"
+- agent_input: "{test_id}"
+- Python will automatically extract DOCUMENTATION_ADDED marker
+
+Example:
+```
+# Implementation flow for each test:
+1. Implementer runs (writes code)
+2. Documentation Generator runs (adds JSDoc, DECISIONS.md, README) ← NEW!
+3. Verifier runs (validates acceptance criteria + quality gates)
+
+Tool: run_agent
+agent_path: "agents/implementer.md"
+agent_input: "specs/plan.md test-001"
+
+Tool: run_agent
+agent_path: "agents/documentation-generator.md"
+agent_input: "test-001"
+
+Tool: run_agent
+agent_path: "agents/verifier.md"
+agent_input: "specs/tests.json test-001"
+```
+
+**What documentation-generator does:**
+- Adds comprehensive JSDoc to all new functions/components
+- Explains design decisions ("Why X approach")
+- Documents alternatives considered and trade-offs
+- Lists edge cases handled
+- Updates or creates DECISIONS.md with ADR entry
+- Updates README.md if user-facing feature added
+- Separate git commit for documentation
+
+**Why this phase matters:**
+- Context is fresh (just wrote the code, remember why)
+- Future developers understand "why" not just "what"
+- Maintenance becomes possible (not mysterious code)
+- Separate commit keeps git history clean
+
+Call report_progress after documenting each test:
+- message: "Documented test-{id} with design decisions and trade-offs"
 
 After each group, verify with run_agents_parallel:
 - agent_path: "agents/verifier.md"
