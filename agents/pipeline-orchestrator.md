@@ -394,9 +394,9 @@ Use get_state() to retrieve all markers
 Call report_progress with final summary:
 - message: Include tests passing, files created, branch name
 
-### Phase 8: Push and Create Draft PR (Optional)
+### Phase 8: Push and Create Draft PR (REQUIRED)
 
-**IMPORTANT:** Only proceed if all tests passed and no critical bugs remain.
+**IMPORTANT:** This phase is REQUIRED for full automation. Only proceed if all tests passed and no critical bugs remain.
 
 Use get_state() to get:
 - branch (feature branch name)
@@ -442,14 +442,49 @@ EOF
 - CI/CD runs automatically
 - You mark as "Ready for review" after local testing
 
-**Fallback:** If gh CLI not available or fails, show manual instructions:
+**Execution Steps:**
+
+1. Check prerequisites:
+```bash
+# Verify gh CLI is available
+gh auth status
+# If fails: ERROR and provide manual instructions
 ```
-To create PR manually:
+
+2. Push branch:
+```bash
+git push -u origin {branch}
+# If fails: ERROR - cannot proceed without push
+```
+
+3. Create draft PR:
+```bash
+gh pr create --draft --title "feat: {task_summary}" --body "..."
+# Capture PR URL from output
+```
+
+4. Report completion:
+```
+Tool: report_progress
+message: "✅ PIPELINE COMPLETE - Draft PR created: {pr_url}"
+```
+
+**If Phase 8 Fails:**
+- Report error with manual instructions
+- Pipeline is still considered successful (code is committed locally)
+- User must push and create PR manually
+
+**Fallback instructions:**
+```
+Phase 8 failed - manual steps required:
+  cd {worktree_path}
+  git push -u origin {branch}
   gh pr create --draft --title "feat: {task}" --web
 ```
 
-Call report_progress:
-- message: "Draft PR created: {pr_url} - Review and mark ready when satisfied"
+Call report_progress with final status:
+- Success: "Draft PR created: {pr_url} - Review on GitHub and mark ready when satisfied"
+- Failure: "Push/PR creation failed - see manual instructions above"
 
 The pipeline completes when all phases are done. No special "DONE" signal needed - just stop calling tools.
 
