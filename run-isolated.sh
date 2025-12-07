@@ -26,10 +26,13 @@ WORKTREE_PATH="$WORKTREE_BASE/$WORKTREE_NAME"
 # Ensure base directory exists
 mkdir -p "$WORKTREE_BASE"
 
-# Create worktree
+# Create worktree with new branch
 echo "Creating isolated worktree: $WORKTREE_PATH"
 echo "Base branch: $BASE_BRANCH"
-git worktree add "$WORKTREE_PATH" "$BASE_BRANCH" --quiet
+# Note: git-setup agent will create the actual feature branch name
+# We create a temporary branch here, git-setup will rename it
+TEMP_BRANCH="temp-$WORKTREE_NAME"
+git worktree add -b "$TEMP_BRANCH" "$WORKTREE_PATH" "$BASE_BRANCH" --quiet
 
 # Change to worktree
 cd "$WORKTREE_PATH"
