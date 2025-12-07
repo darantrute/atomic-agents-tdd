@@ -169,10 +169,147 @@ Default: `/tmp/tdd-worktrees`
 
 ---
 
+---
+
+## Pull Request Workflow
+
+### What Happens After Pipeline Completes
+
+The pipeline **creates a draft PR automatically** (Phase 8):
+
+```bash
+./run-isolated.sh "Add authentication"
+
+# Pipeline runs...
+# At the end:
+✅ All tests passing
+✅ Code pushed to origin
+✅ Draft PR created: https://github.com/user/repo/pull/123
+
+Next steps:
+1. Review the PR on GitHub
+2. Test locally in the worktree
+3. Mark as "Ready for review" when satisfied
+```
+
+**Draft PR means:**
+- ✅ Team can see it immediately
+- ✅ CI/CD runs automatically
+- ❌ Cannot be merged accidentally (protected)
+- ✅ You control when it's ready
+
+---
+
+### Handling Overlapping Changes
+
+**Scenario:** Two PRs modify the same file
+
+```bash
+# Terminal 1
+./run-isolated.sh "Add authentication"
+# → PR #1: Modifies src/models/user.ts (adds authToken)
+
+# Terminal 2 (parallel)
+./run-isolated.sh "Add payments"
+# → PR #2: Modifies src/models/user.ts (adds paymentId)
+```
+
+**What happens:**
+
+1. **Both PRs created as drafts** ✓
+2. **Both reviewed independently** ✓
+3. **PR #1 merged first** ✓
+4. **PR #2 now has conflicts** ⚠️
+
+**GitHub shows:**
+```
+⚠️  This branch has conflicts that must be resolved
+```
+
+**How to fix:**
+
+```bash
+# Update PR #2 with latest main
+cd /tmp/tdd-worktrees/tdd-payments-xxx
+git fetch origin
+git merge origin/main
+
+# Git shows conflict:
+CONFLICT in src/models/user.ts
+
+# Fix manually:
+# Edit src/models/user.ts to include BOTH changes
+git add src/models/user.ts
+git commit -m "fix: Resolve merge conflict with authentication PR"
+git push
+
+# PR #2 now updated and ready to merge ✓
+```
+
+**Key point:** Git **never silently loses code**. It always detects conflicts and makes you resolve them manually.
+
+---
+
+### Best Practice Merge Order
+
+**Strategy 1: Sequential Merge (Safest)**
+```
+1. PR #1: Review → Approve → Merge ✓
+2. PR #2: Update with main → Resolve conflicts → Merge ✓
+3. PR #3: Update with main → Resolve conflicts → Merge ✓
+```
+
+**Strategy 2: Parallel Review, Sequential Merge**
+```
+1. Create all PRs in parallel (draft mode) ✓
+2. Team reviews all simultaneously ✓
+3. Merge one at a time, updating others as needed ✓
+```
+
+**Strategy 3: Feature Flags (Advanced)**
+```
+1. All PRs include feature flags (disabled by default) ✓
+2. Merge all PRs to main (features disabled) ✓
+3. Enable features one by one in production ✓
+```
+
+---
+
+### When Conflicts Are Expected
+
+If you **know** multiple features will modify the same files:
+
+**Option 1: Run sequentially**
+```bash
+./run-isolated.sh "Add authentication"
+# Wait for PR to merge
+./run-isolated.sh "Add payments"  # Now starts from updated main
+```
+
+**Option 2: Create dependency**
+```bash
+./run-isolated.sh "Add authentication"
+# Let it complete and merge
+
+# Then base payments on auth branch:
+git worktree add /tmp/payments feature/add-authentication
+cd /tmp/payments
+python /path/to/run.py "Add payments"
+# This branch is based on auth, not main
+```
+
+---
+
 ## FAQ
 
 **Q: Can I run 10 pipelines at once?**
 A: Yes! Each gets its own worktree. Limited only by system resources.
+
+**Q: What if two PRs conflict?**
+A: Git detects this! Merge the first PR, then update the second with `git merge main`, resolve conflicts, and merge.
+
+**Q: Can conflicts cause data loss?**
+A: No! Git always shows conflicts and requires manual resolution. It never silently loses code.
 
 **Q: Do worktrees duplicate the entire repo?**
 A: No! They share the `.git` database. Only working files are duplicated.

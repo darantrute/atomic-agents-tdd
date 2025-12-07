@@ -311,7 +311,64 @@ Python will extract REPORT_FILE marker automatically
 Use get_state() to retrieve all markers
 
 Call report_progress with final summary:
-- message: Include tests passing, files created, branch name, push instructions
+- message: Include tests passing, files created, branch name
+
+### Phase 8: Push and Create Draft PR (Optional)
+
+**IMPORTANT:** Only proceed if all tests passed and no critical bugs remain.
+
+Use get_state() to get:
+- branch (feature branch name)
+- tests_file
+- bugfinder_report (if available)
+
+Push branch to remote:
+```bash
+git push -u origin {branch}
+```
+
+Create draft PR using GitHub CLI:
+```bash
+gh pr create --draft \
+  --title "feat: {task_summary}" \
+  --body "$(cat <<'EOF'
+## Summary
+Auto-generated implementation via TDD pipeline.
+
+## Tests
+- {test_count} tests implemented and passing ✓
+- All quality gates passed ✓
+
+## Changes
+{brief_summary_of_changes}
+
+## Review Checklist
+- [ ] Code review completed
+- [ ] Integration tested locally
+- [ ] Ready to merge
+
+---
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+**Status:** Draft - requires human review before merge
+EOF
+)"
+```
+
+**Why draft PR?**
+- Visible to team immediately
+- Cannot be merged accidentally
+- CI/CD runs automatically
+- You mark as "Ready for review" after local testing
+
+**Fallback:** If gh CLI not available or fails, show manual instructions:
+```
+To create PR manually:
+  gh pr create --draft --title "feat: {task}" --web
+```
+
+Call report_progress:
+- message: "Draft PR created: {pr_url} - Review and mark ready when satisfied"
 
 The pipeline completes when all phases are done. No special "DONE" signal needed - just stop calling tools.
 
