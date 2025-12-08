@@ -135,7 +135,8 @@ Create test file in the project directory provided above at `specs/chore-DDMMYY-
 ```
 
 ### Step 5: Validation Rules
-- Minimum 5 tests, maximum 15 (keep it focused)
+- Minimum 5 tests, recommended 15 for focused tasks, maximum 100 for large projects
+- Large specs (50+ tests) may take 2-4 hours to implement - use continuation agent if interrupted
 - Each acceptance criterion is verifiable (can run command)
 - No vague criteria ("code is clean", "works well")
 - Priority 1 = must complete, Priority 2 = should complete, Priority 3 = nice to have
