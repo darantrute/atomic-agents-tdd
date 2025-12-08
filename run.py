@@ -40,7 +40,8 @@ class AgentFirstPipeline:
             "git-setup", "requirements-analyzer", "style-integrator", "test-generator",
             "chore-planner", "execution-planner", "implementer", "verifier",
             "bugfinder", "bugfixer", "quick-bugcheck", "metrics-reporter", "continuation",
-            "codebase-context-builder", "documentation-generator"
+            "codebase-context-builder", "documentation-generator",
+            "environment-provisioner", "compliance-enforcer", "code-structure-validator"
         }
 
     def _validate_agent_path(self, agent_path: str) -> tuple[bool, str]:
@@ -337,6 +338,14 @@ class AgentFirstPipeline:
             # Documentation Generator markers
             'documentation_added': r'DOCUMENTATION_ADDED:\s*(.+)',
             'files_documented': r'FILES_DOCUMENTED:\s*(\d+)',
+            # Environment Provisioner markers
+            'infra_config': r'INFRA_CONFIG:\s*(.+)',
+            # Compliance Enforcer markers
+            'compliance_report': r'COMPLIANCE_REPORT:\s*(.+)',
+            'compliance_validation': r'COMPLIANCE_VALIDATION:\s*(pass|fail)',
+            # Code Structure Validator markers
+            'structure_report': r'STRUCTURE_REPORT:\s*(.+)',
+            'structure_validation': r'STRUCTURE_VALIDATION:\s*(pass|fail)',
         }
 
         for key, pattern in markers.items():
@@ -546,6 +555,59 @@ Begin by running git-setup, then follow the phases above.
 
         print()
 
+    async def run_continuation(self):
+        """
+        Resume interrupted pipeline using continuation agent.
+        Reads progress.txt and tests.json to determine next steps.
+        """
+        # Check for concurrent execution lock
+        lock_file = self.project_dir / ".pipeline.lock"
+        lock_handle = None
+
+        try:
+            import fcntl
+            lock_handle = open(lock_file, 'w')
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except IOError:
+            print("\n" + "="*70)
+            print("  ⚠️  ANOTHER PIPELINE IS RUNNING IN THIS DIRECTORY")
+            print("="*70)
+            sys.exit(1)
+        except ImportError:
+            # fcntl not available (Windows) - skip lock check
+            pass
+
+        print("\n" + "="*70)
+        print("  ATOMIC AGENTS TDD - CONTINUATION MODE")
+        print("="*70)
+        print(f"\nProject: {self.project_dir}")
+        print("\nResuming from progress.txt...")
+        print()
+
+        # Run continuation agent directly via orchestrator
+        result = await self.orch.run_agent(
+            agent_path="agents/continuation.md",
+            task_input=str(self.project_dir),
+            cwd=self.project_dir,
+        )
+
+        print("\n" + "="*70)
+        print("  CONTINUATION COMPLETE")
+        print("="*70)
+
+        # Release lock
+        if lock_handle:
+            try:
+                import fcntl
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                lock_handle.close()
+                lock_file.unlink(missing_ok=True)
+            except:
+                pass
+
+        print()
+        return result
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -568,7 +630,9 @@ Examples:
     parser.add_argument(
         "task",
         type=str,
-        help="Task description",
+        nargs='?',
+        default=None,
+        help="Task description (not needed for --continue)",
     )
 
     parser.add_argument(
@@ -578,11 +642,36 @@ Examples:
         help="Project directory (default: current directory)",
     )
 
+    parser.add_argument(
+        "--continue",
+        dest='continue_mode',
+        action="store_true",
+        help="Resume interrupted pipeline from progress.txt",
+    )
+
     args = parser.parse_args()
 
     try:
         pipeline = AgentFirstPipeline(Path(__file__).parent, args.project_dir)
-        asyncio.run(pipeline.run(args.task))
+
+        if args.continue_mode:
+            # Validate state files exist
+            if not (args.project_dir / "progress.txt").exists():
+                print("❌ Error: No progress.txt found. Cannot resume.")
+                print("   Run without --continue to start a new pipeline.")
+                sys.exit(1)
+
+            specs_dir = args.project_dir / "specs"
+            if not specs_dir.exists() or not list(specs_dir.glob("chore-*-tests.json")):
+                print("❌ Error: No test file found. Cannot resume.")
+                sys.exit(1)
+
+            print("🔄 Resuming pipeline from progress.txt...")
+            asyncio.run(pipeline.run_continuation())
+        else:
+            if not args.task:
+                parser.error("task is required unless using --continue")
+            asyncio.run(pipeline.run(args.task))
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user")
         sys.exit(130)
