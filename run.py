@@ -403,81 +403,18 @@ class AgentFirstPipeline:
             tools=tools
         )
 
-        # Build orchestrator system prompt
-        system_prompt = f"""You are the TDD pipeline orchestrator.
+        # Build orchestrator system prompt from template (no phase injection - phases loaded on-demand)
+        orchestrator_template = (self.pipeline_dir / "agents" / "pipeline-orchestrator.md").read_text()
 
-Your job: Coordinate the entire Test-Driven Development pipeline by calling tools.
-
-## Available Tools
-
-You have these tools to control execution:
-
-1. **run_agent** - Run a single agent (blocking)
-2. **run_agents_parallel** - Run multiple agents in parallel (faster!)
-3. **run_agent_background** - Run agent in background (non-blocking)
-4. **get_state** - Get current state (tests_file, plan_file, etc)
-5. **report_progress** - Report progress to user
-
-## Pipeline Phases
-
-Follow this workflow:
-
-### Phase 1: Git Setup
-Call: run_agent(agent_path="agents/git-setup.md", agent_input="{task}")
-This creates a feature branch.
-
-### Phase 2: Generate Tests
-Call: run_agent(agent_path="agents/test-generator.md", agent_input="{task}")
-Call: get_state() to see tests_file path
-
-### Phase 3: Create Plan
-Call: run_agent(agent_path="agents/chore-planner.md", agent_input="{{tests_file}}")
-Call: get_state() to see plan_file path
-
-### Phase 4: Execution Planning
-Call: run_agent(agent_path="agents/execution-planner.md", agent_input="{{tests_file}}")
-This tells you which tests can run in parallel.
-
-### Phase 5: Implementation & Verification
-CRITICAL: Use EXACT agent paths - do NOT modify or prefix agent names!
-
-For implementation, use ONLY: agent_path="agents/implementer.md"
-For verification, use ONLY: agent_path="agents/verifier.md"
-
-For each execution group from Phase 4:
-- If PARALLEL (2-10 tests): Call run_agents_parallel(agent_path="agents/implementer.md", inputs=["{{plan_file}} test-001", "{{plan_file}} test-002"])
-  IMPORTANT: Maximum 10 tests per parallel batch! If more than 10, split into multiple batches.
-- If SEQUENTIAL (1 test): Call run_agent(agent_path="agents/implementer.md", agent_input="{{plan_file}} test-001")
-
-Then verify the same tests:
-- Call run_agents_parallel(agent_path="agents/verifier.md", inputs=["{{tests_file}} test-001", "{{tests_file}} test-002"])
-  Again: Maximum 10 verifiers per batch!
-
-Report progress after each group!
-
-### Phase 6: Bug Check
-Call: run_agent(agent_path="agents/bugfinder.md", agent_input="all")
-
-### Phase 7: Metrics
-Call: run_agent(agent_path="agents/metrics-reporter.md", agent_input="{{tests_file}} {{plan_file}}")
-
-### Phase 8: Final Summary
-Report final results with report_progress tool.
-
-## Important Notes
-
-- Use get_state() to retrieve file paths you need
-- Use run_agents_parallel whenever possible for speed
-- Use report_progress to keep user informed
-- Track all state yourself - Python doesn't help you
-- Construct full inputs for agents (include plan_file path, test IDs, etc)
+        # Add project context
+        system_prompt = orchestrator_template + f"""
 
 ## Project Context
 
 Project Directory: {self.project_dir}
 Task: {task}
 
-Begin by running git-setup, then follow the phases above.
+Begin by analyzing the task and deciding which phases to run.
 """
 
         # Create orchestrator with tools
