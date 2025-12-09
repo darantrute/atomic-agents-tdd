@@ -404,7 +404,7 @@ class AgentFirstPipeline:
         )
 
         # Build orchestrator system prompt from template (no phase injection - phases loaded on-demand)
-        orchestrator_template = (self.pipeline_dir / "agents" / "pipeline-orchestrator.md").read_text()
+        orchestrator_template = (self.base_dir / "agents" / "pipeline-orchestrator.md").read_text()
 
         # Add project context
         system_prompt = orchestrator_template + f"""
