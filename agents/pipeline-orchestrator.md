@@ -75,6 +75,7 @@ You have access to detailed phase documentation files. Use the **Read tool** to 
 
 **Execution Phases:**
 - **Phase 1**: docs/phases/phase-1-generate-tests.md - Generate acceptance tests
+- **Phase 1.5**: docs/phases/phase-1.5-completeness.md - Validate test coverage against specification (CRITICAL for large projects)
 - **Phase 2**: docs/phases/phase-2-plan.md - Create implementation plan
 - **Phase 3**: docs/phases/phase-3-execution-strategy.md - Plan parallel execution
 - **Phase 4**: docs/phases/phase-4-implement.md - Implement and verify tests in groups
@@ -104,18 +105,20 @@ When you reach a phase:
 **YOU decide which phases to run** based on the task complexity:
 
 **Simple Bug Fix** (e.g., "Fix typo in validation"):
-- Skip: Phase 0.5, 0.6, 0.7, 0.8 (no requirements/style/context/infra needed)
+- Skip: Phase 0.5, 0.6, 0.7, 0.8, 1.5 (no requirements/style/context/infra/validation needed)
 - Run: Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 **New Feature with UI** (e.g., "Add user profile page"):
-- Skip: Phase 0.8 (no new infrastructure)
+- Skip: Phase 0.8, 1.5 (no new infrastructure, simple scope)
 - Run: Phase 0 → 0.5 → 0.6 → 0.7 → 1 → 2 → 3 → 4 → 4.5 → 5 → 5.5 → 5.6 → 5.7 → 6 → 7 → 8
 
 **Infrastructure Change** (e.g., "Add Redis caching"):
+- Skip: Phase 1.5 (simple scope)
 - Run: Phase 0 → 0.5 → 0.8 → 1 → 2 → 3 → 4 → 5 → 5.6 → 6 → 7 → 8
 
-**Full Platform** (e.g., "Build analytics dashboard"):
-- Run: ALL phases (0 through 8)
+**Full Platform** (e.g., "Build analytics dashboard with multi-user portals"):
+- Run: ALL phases including Phase 1.5 (0 → 0.5 → 0.6 → 0.7 → 0.8 → 1 → 1.5 → 2 → 3 → 4 → 4.5 → 5 → 5.5 → 5.6 → 5.7 → 6 → 7 → 8)
+- **CRITICAL:** Phase 1.5 is MANDATORY for large projects with specifications to prevent 70% missing features
 
 **Analyze the TASK** and decide your strategy before starting.
 

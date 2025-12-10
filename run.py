@@ -11,7 +11,11 @@ Inspired by: github.com/disler/multi-agent-orchestration
 
 import argparse
 import asyncio
+import json
+import os
+import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -30,19 +34,84 @@ class AgentFirstPipeline:
         self.base_dir = base_dir
         self.project_dir = project_dir
         self.orch = MarkdownOrchestrator(base_dir, project_dir)
-        self.state = {
-            'issues_found': []  # Track issues across implementation groups
-        }
         self.background_tasks = []  # Track async tasks
 
-        # Valid agent names (without the agents/ prefix and .md suffix)
-        self.valid_agents = {
-            "git-setup", "requirements-analyzer", "style-integrator", "test-generator",
-            "chore-planner", "execution-planner", "implementer", "verifier",
-            "bugfinder", "bugfixer", "quick-bugcheck", "metrics-reporter", "continuation",
-            "codebase-context-builder", "documentation-generator",
-            "environment-provisioner", "compliance-enforcer", "code-structure-validator"
-        }
+        # State persistence
+        self.state_file = project_dir / "specs" / ".pipeline-state.json"
+        self.state = self._load_state()
+
+        # Auto-discover valid agents
+        self.valid_agents = self._discover_agents()
+
+    def _discover_agents(self) -> set:
+        """Discover available agents from agents/*.md files."""
+        agents_dir = self.base_dir / "agents"
+        agents = set()
+
+        for agent_file in agents_dir.glob("*.md"):
+            # Skip Zone.Identifier files (Windows artifacts)
+            if ":Zone.Identifier" in agent_file.name:
+                continue
+            # Skip pipeline-orchestrator (it's not callable as a sub-agent)
+            if agent_file.stem == "pipeline-orchestrator":
+                continue
+            agents.add(agent_file.stem)
+
+        print(f"📦 Discovered {len(agents)} agents: {', '.join(sorted(agents))}")
+        return agents
+
+    def _load_state(self) -> dict:
+        """Load state from disk if exists, else return default state."""
+        if self.state_file.exists():
+            try:
+                state = json.loads(self.state_file.read_text())
+                print(f"📂 Loaded existing state from {self.state_file}")
+                return state
+            except json.JSONDecodeError:
+                print(f"⚠️  Corrupted state file, starting fresh")
+                return {'issues_found': [], '_meta': {}}
+        return {'issues_found': [], '_meta': {}}
+
+    def _persist_state(self):
+        """Write state to disk after every change."""
+        self.state['_meta']['last_updated'] = datetime.now().isoformat()
+        self.state['_meta']['pid'] = os.getpid()
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        self.state_file.write_text(json.dumps(self.state, indent=2))
+
+    def _acquire_lock(self, lock_file: Path) -> bool:
+        """Acquire lock with PID-based stale detection."""
+        if lock_file.exists():
+            try:
+                content = lock_file.read_text().strip()
+                if content:
+                    old_pid = int(content)
+                    # Check if process is still running
+                    try:
+                        os.kill(old_pid, 0)  # Signal 0 = check existence
+                        # Process exists - lock is valid
+                        return False
+                    except OSError:
+                        # Process dead - stale lock
+                        print(f"🔓 Removing stale lock (PID {old_pid} is dead)")
+                        lock_file.unlink()
+            except (ValueError, FileNotFoundError):
+                # Invalid lock file content, remove it
+                try:
+                    lock_file.unlink()
+                except FileNotFoundError:
+                    pass
+
+        # Write our PID
+        lock_file.write_text(str(os.getpid()))
+        return True
+
+    def _release_lock(self, lock_file: Path):
+        """Release lock file."""
+        try:
+            lock_file.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def _validate_agent_path(self, agent_path: str) -> tuple[bool, str]:
         """
@@ -300,13 +369,148 @@ class AgentFirstPipeline:
                     "is_error": True
                 }
 
+        @tool(
+            "update_progress",
+            "Update pipeline progress tracking with phase information. REQUIRED: phase (e.g. 'phase-1'), status ('started'|'completed'|'failed'). OPTIONAL: details (dict with extra info).",
+            {"phase": str, "status": str, "details": dict}
+        )
+        async def update_progress_tool(args: Dict[str, Any]) -> Dict[str, Any]:
+            """Tool for updating structured progress"""
+            try:
+                phase = args.get("phase", "unknown")
+                status = args.get("status", "unknown")
+                details = args.get("details", {})
+
+                # Update state with phase info
+                if 'phases' not in self.state:
+                    self.state['phases'] = []
+
+                self.state['phases'].append({
+                    "phase": phase,
+                    "status": status,
+                    "timestamp": datetime.now().isoformat(),
+                    "details": details
+                })
+                self.state['current_phase'] = phase
+                self.state['last_updated'] = datetime.now().isoformat()
+
+                # Persist to disk
+                self._persist_state()
+
+                # Also write human-readable progress.txt
+                self._write_progress_txt()
+
+                print(f"\n📝 Progress: {phase} - {status}")
+
+                return {
+                    "content": [{"type": "text", "text": f"✅ Progress updated: {phase} - {status}"}]
+                }
+
+            except Exception as e:
+                return {
+                    "content": [{"type": "text", "text": f"❌ Error: {str(e)}"}],
+                    "is_error": True
+                }
+
+        @tool(
+            "rollback_pipeline",
+            "Emergency rollback to base commit. USE WITH CAUTION - discards all pipeline changes. REQUIRED: confirm (must be 'yes' to proceed).",
+            {"confirm": str}
+        )
+        async def rollback_tool(args: Dict[str, Any]) -> Dict[str, Any]:
+            """Tool for emergency rollback"""
+            try:
+                if args.get("confirm") != "yes":
+                    return {
+                        "content": [{"type": "text", "text": "❌ Rollback requires confirm='yes' to proceed. This will discard ALL pipeline changes."}],
+                        "is_error": True
+                    }
+
+                base_commit = self.state.get("base_commit")
+                if not base_commit:
+                    return {
+                        "content": [{"type": "text", "text": "❌ No base_commit in state - cannot rollback. Run git log to find commit manually."}],
+                        "is_error": True
+                    }
+
+                print(f"\n⚠️  ROLLING BACK to {base_commit[:8]}...")
+
+                # Hard reset to base commit
+                result = subprocess.run(
+                    ["git", "reset", "--hard", base_commit],
+                    cwd=self.project_dir,
+                    capture_output=True,
+                    text=True
+                )
+
+                if result.returncode != 0:
+                    return {
+                        "content": [{"type": "text", "text": f"❌ Rollback failed: {result.stderr}"}],
+                        "is_error": True
+                    }
+
+                # Clear state except base_commit and task
+                old_task = self.state.get('task', '')
+                self.state = {
+                    "base_commit": base_commit,
+                    "task": old_task,
+                    "issues_found": [],
+                    "rolled_back_at": datetime.now().isoformat(),
+                    "_meta": {}
+                }
+                self._persist_state()
+
+                print(f"✅ Rolled back to {base_commit[:8]}")
+
+                return {
+                    "content": [{"type": "text", "text": f"✅ Rolled back to {base_commit[:8]}. Pipeline state cleared. You can restart the pipeline."}]
+                }
+
+            except Exception as e:
+                return {
+                    "content": [{"type": "text", "text": f"❌ Rollback error: {str(e)}"}],
+                    "is_error": True
+                }
+
         return [
             run_agent_tool,
             run_agents_parallel_tool,
             run_agent_background_tool,
             get_state_tool,
             report_progress_tool,
+            update_progress_tool,
+            rollback_tool,
         ]
+
+    def _write_progress_txt(self):
+        """Write human-readable progress.txt from state."""
+        progress_txt = self.project_dir / "progress.txt"
+
+        lines = [
+            "Pipeline Progress",
+            "=" * 50,
+            f"Task: {self.state.get('task', 'N/A')}",
+            f"Started: {self.state.get('started_at', 'N/A')}",
+            f"Last Update: {self.state.get('last_updated', 'N/A')}",
+            f"Current Phase: {self.state.get('current_phase', 'N/A')}",
+            f"Branch: {self.state.get('branch', 'N/A')}",
+            "",
+            "State:",
+        ]
+
+        # Add key state values
+        skip_keys = {'_meta', 'phases', 'issues_found', 'task', 'started_at', 'last_updated', 'current_phase'}
+        for key, value in self.state.items():
+            if key not in skip_keys:
+                lines.append(f"  {key}: {value}")
+
+        # Add phase history
+        lines.append("")
+        lines.append("Phase History (last 10):")
+        for p in self.state.get("phases", [])[-10:]:
+            lines.append(f"  - {p['phase']}: {p['status']} ({p['timestamp']})")
+
+        progress_txt.write_text("\n".join(lines))
 
     def _extract_markers(self, output: str):
         """Extract and store output markers like TESTS_FILE:, PLAN_FILE:, etc."""
@@ -348,26 +552,27 @@ class AgentFirstPipeline:
             'structure_validation': r'STRUCTURE_VALIDATION:\s*(pass|fail)',
         }
 
+        markers_found = False
         for key, pattern in markers.items():
             value = extract_output_marker(output, pattern)
             if value:
                 self.state[key] = value
                 print(f"   📌 {key}: {value}")
+                markers_found = True
+
+        # Persist state after extracting markers
+        if markers_found:
+            self._persist_state()
 
     async def run(self, task: str):
         """
         Start conversation with orchestrator agent.
         The agent has tools to control execution.
         """
-        # Check for concurrent execution lock
+        # Check for concurrent execution lock (PID-based)
         lock_file = self.project_dir / ".pipeline.lock"
-        lock_handle = None
 
-        try:
-            import fcntl
-            lock_handle = open(lock_file, 'w')
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except IOError:
+        if not self._acquire_lock(lock_file):
             print("\n" + "="*70)
             print("  ⚠️  ANOTHER PIPELINE IS RUNNING IN THIS DIRECTORY")
             print("="*70)
@@ -379,9 +584,11 @@ class AgentFirstPipeline:
             print(f"  python {Path(__file__).absolute()} \"Your feature\"")
             print("\n" + "="*70 + "\n")
             sys.exit(1)
-        except ImportError:
-            # fcntl not available (Windows) - skip lock check
-            pass
+
+        # Store task in state for recovery
+        self.state['task'] = task
+        self.state['started_at'] = datetime.now().isoformat()
+        self._persist_state()
 
         print("\n" + "="*70)
         print("  ATOMIC AGENTS TDD - TRUE AGENT-FIRST (TOOLS-BASED)")
@@ -439,9 +646,8 @@ Begin by analyzing the task and deciding which phases to run.
                 "mcp__pipeline__run_agent_background",
                 "mcp__pipeline__get_state",
                 "mcp__pipeline__report_progress",
-                "mcp__ref__ref_search_documentation",  # Search tech docs
-                "mcp__ref__ref_read_url",              # Read web pages
-                "mcp__ref__ref_search_web",            # Fallback web search
+                "mcp__pipeline__update_progress",
+                "mcp__pipeline__rollback_pipeline",
                 "Read",  # Let orchestrator read files if needed
                 "Bash",  # Let orchestrator check things if needed
             ],
@@ -473,11 +679,7 @@ Begin by analyzing the task and deciding which phases to run.
 
         finally:
             # Release lock
-            if lock_handle:
-                import fcntl
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-                lock_handle.close()
-                lock_file.unlink(missing_ok=True)
+            self._release_lock(lock_file)
 
         if self.state:
             print("\n📋 Final State:")
@@ -497,22 +699,14 @@ Begin by analyzing the task and deciding which phases to run.
         Resume interrupted pipeline using continuation agent.
         Reads progress.txt and tests.json to determine next steps.
         """
-        # Check for concurrent execution lock
+        # Check for concurrent execution lock (PID-based)
         lock_file = self.project_dir / ".pipeline.lock"
-        lock_handle = None
 
-        try:
-            import fcntl
-            lock_handle = open(lock_file, 'w')
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except IOError:
+        if not self._acquire_lock(lock_file):
             print("\n" + "="*70)
             print("  ⚠️  ANOTHER PIPELINE IS RUNNING IN THIS DIRECTORY")
             print("="*70)
             sys.exit(1)
-        except ImportError:
-            # fcntl not available (Windows) - skip lock check
-            pass
 
         print("\n" + "="*70)
         print("  ATOMIC AGENTS TDD - CONTINUATION MODE")
@@ -533,14 +727,7 @@ Begin by analyzing the task and deciding which phases to run.
         print("="*70)
 
         # Release lock
-        if lock_handle:
-            try:
-                import fcntl
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-                lock_handle.close()
-                lock_file.unlink(missing_ok=True)
-            except:
-                pass
+        self._release_lock(lock_file)
 
         print()
         return result

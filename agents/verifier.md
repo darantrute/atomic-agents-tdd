@@ -1,7 +1,7 @@
 ---
 description: Verifies test acceptance criteria are met
 argument-hint: "[tests file path] [test id]"
-model: sonnet
+model: haiku
 tools: [Read, Edit, Bash, Grep]
 ---
 

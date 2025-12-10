@@ -8,10 +8,18 @@ tools: [Read, Edit, Bash, Grep, Glob]
 # Bugfixer Agent
 
 ## Purpose
-Automatically fixes HIGH and CRITICAL bugs identified by the bugfinder. Does NOT attempt to fix all issues - only those with clear, deterministic solutions.
+Automatically fixes HIGH and CRITICAL bugs identified by either:
+1. **Normal Mode**: bugfinder report (Phase 5.5 - end of pipeline)
+2. **Immediate Mode**: quick-bugcheck (Phase 4 - after each group, CRITICAL only)
+
+Does NOT attempt to fix all issues - only those with clear, deterministic solutions.
 
 ## Variables
-BUGFINDER_REPORT: $1
+INPUT: $1
+
+Two input formats supported:
+- **Normal mode**: `{bugfinder_report_path}` (e.g., "specs/bugfinder-report.md")
+- **Immediate mode**: `immediate group-{N}` (e.g., "immediate group-1")
 
 ## Philosophy
 - Fix only HIGH and CRITICAL issues
@@ -21,18 +29,76 @@ BUGFINDER_REPORT: $1
 - Git commit each fix separately
 - Verify fix doesn't break tests
 
+## Mode-Specific Behavior
+
+### Normal Mode (Phase 5.5)
+- Input: Bugfinder report path
+- Scope: All HIGH + CRITICAL issues found
+- Iterations: Max 2 (with re-validation loop)
+- Commit message: "fix(bug): Auto-fix {issue type}"
+
+### Immediate Mode (Phase 4)
+- Input: "immediate group-{N}"
+- Scope: CRITICAL security issues ONLY from quick-bugcheck
+- Iterations: Max 1 (no re-validation loop - fast fixes only)
+- Commit message: "fix(security): Auto-fix critical issues in group {N}"
+- Speed priority: Fix and move on (don't analyze deeply)
+
 ## Instructions
-- Read bugfinder report
-- Analyze each CRITICAL/HIGH issue
-- Determine if fix is deterministic
-- Apply fix using Edit tool
-- Run quick validation
-- Git commit with descriptive message
-- Track what was fixed vs skipped
 
-## Workflow
+**Step 0: Detect Mode**
+Check if INPUT starts with "immediate":
+```bash
+if [[ "$INPUT" == immediate* ]]; then
+  MODE="immediate"
+  GROUP=$(echo "$INPUT" | grep -oP 'group-\K\d+')
+  echo "Running in IMMEDIATE mode for group $GROUP"
+else
+  MODE="normal"
+  BUGFINDER_REPORT="$INPUT"
+  echo "Running in NORMAL mode with report: $BUGFINDER_REPORT"
+fi
+```
 
-### Step 1: Load Bugfinder Report
+### Step 1: Load Issues
+
+**If MODE == "immediate":**
+Get files changed in this group + run quick security scan:
+```bash
+# Find commits for this group (last 1-3 commits typically)
+GROUP_COMMITS=3
+FILES=$(git diff HEAD~$GROUP_COMMITS --name-only | grep -E '\.(ts|tsx|js|jsx)$')
+
+# Scan for critical security issues
+ISSUES_FOUND=()
+
+for file in $FILES; do
+  # SQL injection
+  if grep -n "SELECT.*\${" "$file"; then
+    ISSUES_FOUND+=("$file:SQL_INJECTION")
+  fi
+
+  # XSS via innerHTML
+  if grep -n "\.innerHTML\s*=" "$file"; then
+    ISSUES_FOUND+=("$file:XSS")
+  fi
+
+  # eval usage
+  if grep -n "eval(" "$file"; then
+    ISSUES_FOUND+=("$file:CODE_INJECTION")
+  fi
+
+  # Command injection
+  if grep -n "exec(" "$file"; then
+    ISSUES_FOUND+=("$file:COMMAND_INJECTION")
+  fi
+done
+
+echo "Found ${#ISSUES_FOUND[@]} critical issues in group $GROUP"
+```
+
+**If MODE == "normal":**
+Load bugfinder report:
 ```bash
 cat {BUGFINDER_REPORT}
 ```

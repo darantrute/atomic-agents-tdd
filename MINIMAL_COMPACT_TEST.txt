@@ -1,0 +1,79 @@
+PROJECT: Context Compaction Test
+TYPE: Minimal test to verify auto-compact and Haiku verifiers
+
+=== OBJECTIVE ===
+Test that:
+1. Verifier agents use Haiku (not Sonnet)
+2. Auto-compact feature is enabled
+3. Orchestrator can use manual /compact after categories
+4. Pipeline completes without context issues
+
+=== STACK ===
+Language: JavaScript/Node.js
+Testing: Simple console output validation
+
+=== FEATURES ===
+
+CATEGORY: math-utils
+- Test basic arithmetic functions
+- 3 simple tests
+
+CATEGORY: string-utils
+- Test string manipulation functions
+- 3 simple tests
+
+Total: 6 tests (should complete in ~5-10 minutes)
+
+=== TESTS TO GENERATE ===
+
+Category: math-utils
+
+1. Test: Add two numbers
+   - Create function add(a, b) that returns a + b
+   - Acceptance: node -e "const {add} = require('./math-utils.js'); console.log(add(2, 3) === 5)"
+
+2. Test: Subtract two numbers
+   - Create function subtract(a, b) that returns a - b
+   - Acceptance: node -e "const {subtract} = require('./math-utils.js'); console.log(subtract(5, 3) === 2)"
+
+3. Test: Multiply two numbers
+   - Create function multiply(a, b) that returns a * b
+   - Acceptance: node -e "const {multiply} = require('./math-utils.js'); console.log(multiply(4, 5) === 20)"
+
+Category: string-utils
+
+4. Test: Reverse a string
+   - Create function reverse(str) that reverses a string
+   - Acceptance: node -e "const {reverse} = require('./string-utils.js'); console.log(reverse('hello') === 'olleh')"
+
+5. Test: Uppercase a string
+   - Create function upper(str) that converts to uppercase
+   - Acceptance: node -e "const {upper} = require('./string-utils.js'); console.log(upper('hello') === 'HELLO')"
+
+6. Test: Count characters in string
+   - Create function countChars(str) that returns character count
+   - Acceptance: node -e "const {countChars} = require('./string-utils.js'); console.log(countChars('hello') === 5)"
+
+=== OBSERVATION CHECKLIST ===
+
+During pipeline execution, watch for:
+
+✓ Verifier agents using claude-3-5-haiku model (not sonnet)
+✓ Auto-compact message at ~95% context (unlikely with only 6 tests)
+✓ Orchestrator using report_progress("/compact ...") after math-utils category
+✓ Orchestrator using report_progress("/compact ...") after string-utils category
+✓ All 6 tests passing
+✓ No context exhaustion errors
+✓ Pipeline completing successfully
+
+=== SUCCESS CRITERIA ===
+
+PASS if:
+- All 6 tests implemented and verified
+- Verifiers use Haiku model
+- Orchestrator attempts manual /compact at least once
+- No context-related errors
+
+BONUS if:
+- Can see "Compaction completed" or similar messages in logs
+- Token usage appears reduced after compaction

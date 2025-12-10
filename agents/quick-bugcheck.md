@@ -190,11 +190,34 @@ Status: {CLEAN | ISSUES_FOUND}
 ⚠️  Full bugfinder will run comprehensive analysis at pipeline end
 ```
 
-### Step 7: Output Markers
+### Step 7: Classify Severity and Output Markers
+
+Classify issues by severity:
+- **CRITICAL**: Security vulnerabilities (SQL injection, XSS, eval, command injection)
+- **HIGH**: Type errors, missing error handling in async functions
+- **WARNING**: Linting errors, minor issues
+
+```bash
+# Calculate critical issues (security only)
+CRITICAL_ISSUES=$SECURITY_ISSUES
+
+# Calculate high priority issues (type errors + error handling)
+HIGH_PRIORITY=$((TYPE_ERRORS + ERROR_HANDLING_ISSUES))
+
+echo "=== Severity Classification ==="
+echo "CRITICAL (security): $CRITICAL_ISSUES"
+echo "HIGH (type/error handling): $HIGH_PRIORITY"
+echo "WARNING (lint): $LINT_ERRORS"
+```
+
+Output markers:
 
 ```
 QUICK_BUGCHECK_GROUP: {GROUP_NUMBER}
 FILES_CHECKED: {count}
+CRITICAL_ISSUES: {count}
+HIGH_PRIORITY: {count}
+WARNING_ISSUES: {count}
 TYPE_ERRORS: {count}
 SECURITY_ISSUES: {count}
 ERROR_HANDLING_ISSUES: {count}
@@ -246,6 +269,9 @@ Status: ISSUES_FOUND
 ```
 QUICK_BUGCHECK_GROUP: 2
 FILES_CHECKED: 3
+CRITICAL_ISSUES: 1
+HIGH_PRIORITY: 0
+WARNING_ISSUES: 2
 TYPE_ERRORS: 0
 SECURITY_ISSUES: 1
 ERROR_HANDLING_ISSUES: 0

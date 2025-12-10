@@ -53,6 +53,62 @@ If you see: `STYLE_SYSTEM: specs/style-DDMMYY-HHMM.md`
 If NO style system is provided:
 - Skip style compliance tests (backward compatible)
 
+### Step 1.7: Check for Original Specification (NEW - Completeness Validation)
+
+**CRITICAL: This step prevents the "70% missing features" problem.**
+
+Check if a SPECIFICATION file path is provided in the task description.
+
+If you see: `SPECIFICATION: docs/project-spec.md` or similar:
+- **READ THIS FILE** using the Read tool
+- This is the source of truth - it describes what the user ACTUALLY wants
+- The architecture map is derived from this, but may be incomplete
+- Use the specification to validate that you're generating tests for ALL features
+
+**What to extract from specification:**
+1. **User Personas**: All user roles mentioned (Sergeant, Inspector, Admin, etc.)
+2. **User Journeys**: All workflows described (step-by-step user actions)
+3. **Features**: All capabilities mentioned (search, analytics, export, etc.)
+4. **Pages/Routes**: All URL routes mentioned (/dashboard, /analytics, /search, etc.)
+5. **Data Entities**: All business objects (User, Encounter, Report, etc.)
+
+**How to use this:**
+- After generating tests from the architecture map, cross-reference against the specification
+- Ask yourself: "Does every persona in the spec have tests covering their workflow?"
+- Ask yourself: "Does every feature mentioned in the spec have at least one test?"
+- If you find gaps, ADD tests for those missing features
+
+**Example:**
+```
+Architecture map includes:
+- Dashboard ✓
+- Review Queue ✓
+- Encounter Detail ✓
+
+Specification mentions:
+- Dashboard ✓ (covered)
+- Review Queue ✓ (covered)
+- Encounter Detail ✓ (covered)
+- Analytics Dashboard ❌ (NOT covered - ADD TESTS)
+- Search Functionality ❌ (NOT covered - ADD TESTS)
+- Community Panel Portal ❌ (NOT covered - ADD TESTS)
+```
+
+**Rule:**
+- If architecture map exists AND specification exists → Tests must cover BOTH
+- If only architecture map → Tests cover architecture map (current behavior)
+- If only specification → Tests inferred from specification (fallback)
+
+**Clarification on "Scope Creep" Warning:**
+- The warning "do NOT add scope creep" applies to SMALL tasks without specs
+- Example: "Fix typo" → Don't add tests for refactoring
+- For LARGE projects with specifications → Generate tests for EVERYTHING in the spec
+- If the spec has 50 pages describing 5 user portals, you MUST generate tests for all 5 portals
+- Not generating tests = missing features = pipeline failure
+
+If NO specification is provided:
+- Continue with architecture map only (backward compatible)
+
 ### Step 1.6: Enumerate States for Each Feature
 
 **CRITICAL: Think through ALL possible states for each feature.**
@@ -397,6 +453,73 @@ Create test file in the project directory provided above at `specs/chore-DDMMYY-
 ]
 ```
 
+### Step 4.5: Calculate Coverage Metrics (NEW - Completeness Validation)
+
+**If SPECIFICATION was provided in Step 1.7, calculate coverage metrics:**
+
+#### Extract from Specification:
+1. Count unique personas mentioned
+2. Count user journeys described
+3. Count URL routes mentioned (/, /dashboard, /analytics, etc.)
+4. Count features mentioned (search, export, analytics, etc.)
+5. Count data entities mentioned (User, Report, etc.)
+
+#### Extract from Generated Tests:
+1. Count which personas have tests (check test descriptions for persona names/roles)
+2. Count which journeys have tests (check if workflow steps are tested)
+3. Count which routes have tests (check acceptance criteria for route mentions)
+4. Count which features have tests (check test descriptions for feature names)
+5. Count which entities have tests (check if CRUD operations are tested)
+
+#### Calculate Coverage Percentages:
+```
+persona_coverage = (personas_with_tests / total_personas) * 100
+journey_coverage = (journeys_with_tests / total_journeys) * 100
+route_coverage = (routes_with_tests / total_routes) * 100
+feature_coverage = (features_with_tests / total_features) * 100
+entity_coverage = (entities_with_tests / total_entities) * 100
+
+overall_coverage = average of above 5 metrics
+```
+
+#### Identify Gaps:
+List features/routes/personas that are in the specification but DON'T have tests.
+
+Example:
+```
+Specification mentions:
+- 5 personas (Sergeant, Inspector, Investigator, Panel Member, Officer)
+- 12 user journeys
+- 24 URL routes
+- 32 features
+- 10 data entities
+
+Generated tests cover:
+- 1 persona (Sergeant) → 20% coverage
+- 1 journey (Morning Review Queue) → 8.3% coverage
+- 3 routes (/, /queue, /encounter/:id) → 12.5% coverage
+- 8 features (dashboard, queue, detail, review) → 25% coverage
+- 3 entities (Encounter, Review, User) → 30% coverage
+
+Overall coverage: 19.2%
+
+GAPS:
+- Missing personas: Inspector (analytics), Investigator (search), Panel Member, Officer
+- Missing routes: /analytics, /search, /reports, /panel, /my, /admin (21 routes)
+- Missing features: Search, Analytics dashboards, Reports, Panel portal, Officer portal (24 features)
+```
+
+**If coverage <80%, add WARNING comment in output:**
+```
+⚠️  WARNING: Test coverage is only 19.2% of specification
+⚠️  Missing 4/5 personas, 21/24 routes, 24/32 features
+⚠️  Recommend running completeness-validator in Phase 1.5
+```
+
+**If NO SPECIFICATION was provided:**
+- Skip this step (backward compatible)
+- No coverage metrics calculated
+
 ### Step 5: Validation Rules
 - Minimum 5 tests, recommended 15 for focused tasks, maximum 100 for large projects
 - Large specs (50+ tests) may take 2-4 hours to implement - use continuation agent if interrupted
@@ -411,8 +534,39 @@ TESTS_FILE: specs/chore-DDMMYY-HHMM-tests.json
 ```
 
 ## Report
+
+**Without Specification (backward compatible):**
 ```
 TESTS_FILE: specs/chore-041225-1430-tests.json
 TOTAL_TESTS: 8
 CATEGORIES: dependencies(3), refactoring(3), cleanup(2)
+```
+
+**With Specification (NEW - includes coverage metrics):**
+```
+TESTS_FILE: specs/chore-051225-1536-tests.json
+TOTAL_TESTS: 45
+CATEGORIES: api(12), database(8), integration(10), ui(8), edge-cases(5), security(2)
+COVERAGE_PERCENTAGE: 85.5
+PERSONA_COVERAGE: 5/5 (100%)
+ROUTE_COVERAGE: 22/24 (91.7%)
+FEATURE_COVERAGE: 28/32 (87.5%)
+JOURNEY_COVERAGE: 10/12 (83.3%)
+ENTITY_COVERAGE: 8/10 (80%)
+GAPS: /admin/audit, /admin/settings, AdvancedAnalytics, BulkExport
+```
+
+**With Specification (LOW coverage - triggers warning):**
+```
+TESTS_FILE: specs/chore-051225-1536-tests.json
+TOTAL_TESTS: 12
+CATEGORIES: api(5), database(3), ui(4)
+COVERAGE_PERCENTAGE: 19.2
+PERSONA_COVERAGE: 1/5 (20%)
+ROUTE_COVERAGE: 3/24 (12.5%)
+FEATURE_COVERAGE: 8/32 (25%)
+JOURNEY_COVERAGE: 1/12 (8.3%)
+ENTITY_COVERAGE: 3/10 (30%)
+GAPS: Inspector workflow, Investigator workflow, Panel portal, Officer portal, Search, Analytics, Reports (24 missing features)
+WARNING: Coverage critically low - recommend Phase 1.5 completeness validation
 ```

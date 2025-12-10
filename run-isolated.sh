@@ -1,7 +1,8 @@
 #!/bin/bash
 # run-isolated.sh - Run pipeline in isolated worktree
 # Usage: ./run-isolated.sh "Add authentication"
-#    OR: ./run-isolated.sh spec-file.txt (auto-detects and reads file)
+#    OR: ./run-isolated.sh spec-file.txt (auto-detects file, uses --spec flag)
+#    OR: ./run-isolated.sh /path/to/spec.txt (supports large specs)
 #    OR: ./run-isolated.sh --continue (resume most recent worktree)
 
 set -euo pipefail
@@ -15,8 +16,8 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "Examples:"
     echo "  $0 \"Add user authentication\""
-    echo "  $0 \"$(cat spec.txt)\"             # Read file content"
-    echo "  $0 spec.txt                       # Auto-detects file and reads it"
+    echo "  $0 spec.txt                       # Auto-detects file, uses --spec (handles large specs!)"
+    echo "  $0 /path/to/spec.txt              # Absolute paths work too"
     echo "  $0 --continue                     # Resume most recent worktree"
     echo ""
     echo "Environment variables:"
@@ -104,20 +105,27 @@ fi
 
 INPUT="$1"
 
-# Auto-detect if input is a file path and read it
+# Auto-detect if input is a file path
 if [ -f "$INPUT" ]; then
     echo "📄 Detected file: $INPUT"
-    echo "   Reading file contents..."
-    TASK=$(cat "$INPUT")
-    echo "   ✅ Loaded ${#TASK} characters from file"
+    SPEC_FILE="$INPUT"
+    USE_SPEC_FLAG=true
+
+    # Get file size for display
+    TASK_SIZE=$(wc -c < "$INPUT")
+    echo "   File size: $TASK_SIZE bytes"
+    echo "   ✅ Will use --spec flag (avoids argument limit)"
     echo ""
+
+    # Read first line for display
+    TASK=$(head -1 "$INPUT")
 elif [ ${#INPUT} -lt 50 ]; then
     # Input is very short - likely a mistake
     echo "⚠️  WARNING: Input is very short (${#INPUT} characters)"
     echo ""
     echo "If '$INPUT' is a filename, make sure:"
     echo "  1. The file exists in the current directory"
-    echo "  2. Or use: $0 \"\$(cat $INPUT)\""
+    echo "  2. Or provide absolute path: $0 /path/to/$INPUT"
     echo ""
     read -p "Continue with this short input? (y/N) " -n 1 -r
     echo ""
@@ -126,12 +134,27 @@ elif [ ${#INPUT} -lt 50 ]; then
         exit 1
     fi
     TASK="$INPUT"
+    USE_SPEC_FLAG=false
 else
     TASK="$INPUT"
+    USE_SPEC_FLAG=false
 fi
 
 # Validate input looks like a specification
-if [ ${#TASK} -gt 100 ]; then
+if [ "$USE_SPEC_FLAG" = true ]; then
+    # Validate file-based spec
+    if ! head -20 "$SPEC_FILE" | grep -qi "STACK\|FEATURES\|DATABASE\|PROJECT\|TYPE"; then
+        echo "⚠️  WARNING: File doesn't look like a specification"
+        echo "   Expected sections: PROJECT, STACK, FEATURES, DATABASE, etc."
+        echo ""
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Aborted."
+            exit 1
+        fi
+    fi
+elif [ ${#TASK} -gt 100 ]; then
     # Only validate structure for substantial inputs
     if ! echo "$TASK" | grep -qi "STACK\|FEATURES\|DATABASE\|PROJECT\|TYPE"; then
         echo "⚠️  WARNING: Input doesn't look like a specification"
@@ -176,12 +199,21 @@ git worktree add -b "$TEMP_BRANCH" "$WORKTREE_PATH" "$BASE_BRANCH" --quiet
 cd "$WORKTREE_PATH"
 
 echo "🚀 Running TDD pipeline..."
-echo "   Task: ${TASK:0:80}$([ ${#TASK} -gt 80 ] && echo '...')"
-echo "   Spec length: ${#TASK} characters"
-echo ""
+if [ "$USE_SPEC_FLAG" = true ]; then
+    echo "   Spec file: $SPEC_FILE"
+    echo "   File size: $TASK_SIZE bytes"
+    echo ""
 
-# Run pipeline
-python "$SCRIPT_DIR/run.py" "$TASK"
+    # Run pipeline with --spec flag
+    python "$SCRIPT_DIR/run.py" --spec "$SPEC_FILE" --project-dir .
+else
+    echo "   Task: ${TASK:0:80}$([ ${#TASK} -gt 80 ] && echo '...')"
+    echo "   Spec length: ${#TASK} characters"
+    echo ""
+
+    # Run pipeline with task argument
+    python "$SCRIPT_DIR/run.py" "$TASK"
+fi
 
 # Store exit code
 EXIT_CODE=$?

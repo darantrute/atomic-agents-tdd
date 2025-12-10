@@ -94,6 +94,301 @@ Identify the project archetype and its standard requirements:
 - Export functionality
 - Real-time updates (optional)
 
+### Step 2.5: Extract User Journeys
+
+**CRITICAL: Explicitly extract ALL user journeys from the specification.**
+
+User journeys are the KEY to comprehensive requirements. Each journey maps to multiple pages, components, and features.
+
+#### Scan for User Personas
+
+Look for user roles/personas mentioned:
+- Keywords: "user," "admin," "officer," "sergeant," "inspector," "analyst," "member," "customer," "manager"
+- Titles: "Sergeant Patel," "Inspector Khan," "DC Morrison," etc.
+- Roles: "supervisor," "investigator," "reviewer," "analyst," "community member"
+
+For each persona, extract:
+- Name (if provided)
+- Role/title
+- Responsibilities
+- Goals
+
+#### Extract Workflows/Journeys
+
+For each persona, scan for workflow descriptions:
+- Look for numbered steps: "1. User logs in, 2. User selects..."
+- Look for sequential language: "First..., then..., next..., finally..."
+- Look for capability descriptions: "User can...", "User should be able to...", "User navigates to..."
+- Look for scenario descriptions: "When inspecting patterns...", "During complaint triage..."
+
+For each journey, extract:
+1. **Journey Name** (e.g., "Morning Review Queue," "Pattern Investigation")
+2. **Persona** (who performs this journey)
+3. **Steps** (each step = a page/action pair)
+
+#### Map Steps to Technical Requirements
+
+For each journey step, identify:
+- **Page/Route**: What URL the user visits (e.g., "/dashboard", "/analytics", "/search")
+- **Action**: What the user does (e.g., "views pending count," "filters by date")
+- **UI Components**: What components are needed (e.g., "PendingCountCard," "DateRangePicker")
+- **Data Requirements**: What data is fetched (e.g., "pending_encounters", "aggregated_stats")
+- **API Endpoints**: What APIs are called (e.g., "GET /api/encounters/pending")
+
+#### Example Journey Extraction
+
+**Specification text:**
+> "Inspector Khan starts her morning by reviewing force-wide analytics. She opens the analytics dashboard, selects her LPT from the dropdown, and views the disproportionality chart. She notices an amber flag and clicks through to see individual officer patterns."
+
+**Extracted Journey:**
+```json
+{
+  "persona": {
+    "name": "Inspector Khan",
+    "role": "LPT Commander",
+    "responsibilities": ["Monitor patterns", "Ensure compliance", "Investigate issues"]
+  },
+  "journey": {
+    "name": "Morning Analytics Review",
+    "steps": [
+      {
+        "step": 1,
+        "action": "Opens analytics dashboard",
+        "page": "/analytics",
+        "components": ["AnalyticsNav", "ForceOverview"],
+        "data": ["force_stats", "trend_data"],
+        "api": ["GET /api/analytics/force"]
+      },
+      {
+        "step": 2,
+        "action": "Selects LPT from dropdown",
+        "page": "/analytics/lpt/:id",
+        "components": ["LPTSelector", "LPTDashboard"],
+        "data": ["lpt_stats", "officer_breakdown"],
+        "api": ["GET /api/analytics/lpt/:id"]
+      },
+      {
+        "step": 3,
+        "action": "Views disproportionality chart",
+        "page": "/analytics/equity",
+        "components": ["EquityChart", "DisparitiesTable"],
+        "data": ["ethnicity_breakdown", "population_baseline"],
+        "api": ["GET /api/analytics/equity"]
+      },
+      {
+        "step": 4,
+        "action": "Clicks through to officer patterns",
+        "page": "/analytics/officer/:id",
+        "components": ["OfficerProfile", "PatternAlerts"],
+        "data": ["officer_metrics", "pattern_detections"],
+        "api": ["GET /api/officers/:id/patterns"]
+      }
+    ]
+  }
+}
+```
+
+**Result:** This ONE journey reveals:
+- 4 URL routes: /analytics, /analytics/lpt/:id, /analytics/equity, /analytics/officer/:id
+- 8 UI components: AnalyticsNav, ForceOverview, LPTSelector, LPTDashboard, EquityChart, DisparitiesTable, OfficerProfile, PatternAlerts
+- 4 API endpoints: GET /api/analytics/force, GET /api/analytics/lpt/:id, GET /api/analytics/equity, GET /api/officers/:id/patterns
+- 6 data entities: force_stats, trend_data, lpt_stats, officer_breakdown, ethnicity_breakdown, population_baseline
+
+### Step 2.6: Detect Multi-Portal Architecture
+
+**If specification has ≥3 personas with non-overlapping workflows → Multi-portal architecture**
+
+Many projects have separate user interfaces for different user types:
+- **E-commerce:** Customer portal + Vendor portal + Admin portal
+- **Healthcare:** Patient portal + Doctor portal + Admin portal
+- **Policing:** Supervisor portal + Analytics portal + Community panel portal + Officer portal
+
+#### Detection Rules
+
+Scan personas and their journeys:
+- If ≥3 personas have ZERO overlapping pages → Separate portals
+- If personas have different authentication levels → Separate portals
+- If spec explicitly mentions "portal," "interface," "app" for each persona → Separate portals
+
+#### For Each Portal, Specify:
+
+```json
+{
+  "portals": [
+    {
+      "name": "Supervisor Portal",
+      "primary_persona": "Sergeant",
+      "routes": ["/", "/queue", "/encounter/:id"],
+      "components": ["Dashboard", "ReviewQueue", "EncounterDetail"],
+      "shared_components": ["Navigation", "AuthGuard"],
+      "priority": "critical"
+    },
+    {
+      "name": "Analytics Portal",
+      "primary_persona": "Inspector",
+      "routes": ["/analytics", "/analytics/force", "/analytics/lpt/:id", "/analytics/equity", "/analytics/officer/:id"],
+      "components": ["ForceOverview", "LPTDashboard", "EquityAnalysis", "OfficerProfile"],
+      "shared_components": ["Navigation", "AuthGuard", "ExportButton"],
+      "priority": "critical"
+    },
+    {
+      "name": "Community Panel Portal",
+      "primary_persona": "Panel Member",
+      "routes": ["/panel", "/panel/case/:id"],
+      "components": ["AnonymizedCaseList", "CaseReview", "FeedbackForm"],
+      "shared_components": ["Navigation", "AuthGuard"],
+      "priority": "high"
+    }
+  ]
+}
+```
+
+**Impact on Test Generation:**
+- Each portal = separate set of tests
+- Each portal has its own authentication tests
+- Each portal has its own navigation tests
+- Shared components tested once, reused across portals
+
+### Step 2.7: Detect Search/Filter Requirements
+
+**Scan specification for search-related keywords:**
+- "search," "find," "look up," "query," "locate," "discover"
+- "filter," "refine," "narrow down," "select by"
+
+If found ≥3 times → Search functionality is a core requirement
+
+#### For Search Features, Specify:
+
+```json
+{
+  "search_infrastructure": {
+    "required": true,
+    "search_types": [
+      {
+        "name": "Reference Search",
+        "description": "Search by stop reference ID",
+        "implementation": "Database index on reference field",
+        "ui": "Search input on /search page",
+        "api": "GET /api/search?ref=XXX"
+      },
+      {
+        "name": "Officer Search",
+        "description": "Search by officer ID or name",
+        "implementation": "Full-text search on officer name",
+        "ui": "Autocomplete search input",
+        "api": "GET /api/search?officer=XXX"
+      },
+      {
+        "name": "Date Range Search",
+        "description": "Filter by date range",
+        "implementation": "Database index on date field",
+        "ui": "Date range picker",
+        "api": "GET /api/search?from=DATE&to=DATE"
+      }
+    ],
+    "components": ["SearchPage", "SearchInput", "SearchResults", "FilterPanel", "DateRangePicker"],
+    "api_endpoints": ["GET /api/search"],
+    "priority": "high"
+  }
+}
+```
+
+### Step 2.8: Detect Analytics/Reporting Requirements
+
+**Scan specification for analytics keywords:**
+- "analytics," "dashboard," "metrics," "KPI," "statistics"
+- "trend," "pattern," "insight," "analysis," "comparison"
+- "chart," "graph," "visualization," "heatmap"
+
+If found ≥5 times → Analytics infrastructure is required
+
+#### For Analytics Features, Specify:
+
+```json
+{
+  "analytics_infrastructure": {
+    "required": true,
+    "dashboards": [
+      {
+        "name": "Force Overview",
+        "route": "/analytics/force",
+        "components": ["KPICards", "TrendCharts", "HeatMap"],
+        "data": ["total_searches", "hit_rate", "weak_grounds_percentage", "disproportionality_index"],
+        "api": "GET /api/analytics/force",
+        "aggregations": ["COUNT", "AVG", "GROUP BY date", "GROUP BY ethnicity"],
+        "priority": "critical"
+      },
+      {
+        "name": "LPT Dashboard",
+        "route": "/analytics/lpt/:id",
+        "components": ["LPTStats", "OfficerBreakdown", "TrendComparison"],
+        "data": ["lpt_searches", "officer_metrics", "comparison_to_force_avg"],
+        "api": "GET /api/analytics/lpt/:id",
+        "aggregations": ["COUNT", "GROUP BY officer", "AVG vs force"],
+        "priority": "critical"
+      }
+    ],
+    "chart_library": "Recharts or Tremor",
+    "export_formats": ["PDF", "CSV"],
+    "priority": "critical"
+  }
+}
+```
+
+### Step 2.9: Detect Export/Report Requirements
+
+**Scan specification for export/report keywords:**
+- "export," "download," "save," "extract"
+- "PDF," "CSV," "Excel," "report," "evidence pack"
+- "generate," "create report," "produce document"
+
+If found ≥3 times → Reporting infrastructure is required
+
+#### For Reporting Features, Specify:
+
+```json
+{
+  "reporting_infrastructure": {
+    "required": true,
+    "export_formats": [
+      {
+        "format": "PDF",
+        "use_cases": ["Evidence packs", "Compliance reports", "Investigation summaries"],
+        "library": "jsPDF or Puppeteer",
+        "api": "GET /api/reports/:id/pdf",
+        "components": ["PDFTemplate", "ReportBuilder"],
+        "priority": "high"
+      },
+      {
+        "format": "CSV",
+        "use_cases": ["Data export", "Excel analysis", "Bulk downloads"],
+        "library": "csv-stringify",
+        "api": "GET /api/reports/:id/csv",
+        "components": ["ExportButton"],
+        "priority": "medium"
+      }
+    ],
+    "report_types": [
+      {
+        "name": "Compliance Report",
+        "description": "Force-wide compliance summary for panel",
+        "includes": ["Summary stats", "Trend charts", "Disproportionality analysis"],
+        "frequency": "Monthly",
+        "priority": "high"
+      },
+      {
+        "name": "Evidence Pack",
+        "description": "Individual encounter with all supporting data",
+        "includes": ["Encounter details", "AI scores", "Supervisor review", "Officer history"],
+        "frequency": "On-demand",
+        "priority": "high"
+      }
+    ],
+    "priority": "high"
+  }
+}
+```
+
 ### Step 3: Map Infrastructure Requirements
 
 For each infrastructure component mentioned or implied, specify:
@@ -287,6 +582,68 @@ Create comprehensive JSON architecture map:
     "ui_library": "TailwindCSS + Tremor UI",
     "charts": "Recharts",
     "maps": "Mapbox"
+  },
+  "user_journeys": [
+    {
+      "persona": {
+        "name": "Sergeant Patel",
+        "role": "Supervisor",
+        "responsibilities": ["Review encounters", "Ensure compliance"]
+      },
+      "journeys": [
+        {
+          "name": "Morning Review Queue",
+          "steps": [
+            {
+              "step": 1,
+              "action": "View dashboard",
+              "page": "/",
+              "components": ["Dashboard", "PendingCountCard"],
+              "data": ["pending_count", "flagged_count"],
+              "api": ["GET /api/encounters/stats"]
+            },
+            {
+              "step": 2,
+              "action": "Open review queue",
+              "page": "/queue",
+              "components": ["ReviewQueue", "EncounterTable"],
+              "data": ["pending_encounters"],
+              "api": ["GET /api/encounters/pending"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "portals": [
+    {
+      "name": "Supervisor Portal",
+      "primary_persona": "Sergeant",
+      "routes": ["/", "/queue", "/encounter/:id"],
+      "components": ["Dashboard", "ReviewQueue", "EncounterDetail"],
+      "shared_components": ["Navigation", "AuthGuard"],
+      "priority": "critical"
+    }
+  ],
+  "search_infrastructure": {
+    "required": false,
+    "search_types": [],
+    "components": [],
+    "api_endpoints": [],
+    "priority": "n/a"
+  },
+  "analytics_infrastructure": {
+    "required": false,
+    "dashboards": [],
+    "chart_library": "n/a",
+    "export_formats": [],
+    "priority": "n/a"
+  },
+  "reporting_infrastructure": {
+    "required": false,
+    "export_formats": [],
+    "report_types": [],
+    "priority": "n/a"
   },
   "infrastructure": [
     {

@@ -7,7 +7,9 @@ Executes atomic markdown agents and TDD pipelines.
 
 import asyncio
 import json
+import random
 import re
+from functools import wraps
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -18,6 +20,45 @@ from markdown_parser import (
     extract_output_marker,
     interpolate_variables,
 )
+
+
+def with_retry(max_attempts: int = 3, base_delay: float = 2.0, max_delay: float = 30.0):
+    """
+    Retry decorator with exponential backoff and jitter.
+    
+    Args:
+        max_attempts: Maximum number of retry attempts
+        base_delay: Initial delay in seconds
+        max_delay: Maximum delay cap in seconds
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_attempts):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    error_str = str(e).lower()
+                    
+                    # Don't retry on certain errors
+                    non_retryable = ['invalid', 'not found', 'permission', 'authentication']
+                    if any(nr in error_str for nr in non_retryable):
+                        print(f"❌ Non-retryable error: {e}")
+                        raise
+                    
+                    if attempt < max_attempts - 1:
+                        # Exponential backoff with jitter
+                        delay = min(base_delay * (2 ** attempt) + random.uniform(0, 1), max_delay)
+                        print(f"\n⚠️  Attempt {attempt + 1}/{max_attempts} failed: {e}")
+                        print(f"    Retrying in {delay:.1f}s...")
+                        await asyncio.sleep(delay)
+                    else:
+                        print(f"\n❌ All {max_attempts} attempts failed. Last error: {e}")
+            raise last_exception
+        return wrapper
+    return decorator
 
 
 class MarkdownOrchestrator:
@@ -40,6 +81,7 @@ class MarkdownOrchestrator:
         self.project_dir = project_dir
         self.state: Dict[str, Any] = {}  # Stores extracted values
 
+    @with_retry(max_attempts=3, base_delay=2.0, max_delay=30.0)
     async def run_agent(
         self,
         agent_path: str,
@@ -48,6 +90,8 @@ class MarkdownOrchestrator:
     ) -> str:
         """
         Execute a single atomic agent with fresh context.
+        
+        Includes automatic retry with exponential backoff for transient failures.
 
         Args:
             agent_path: Relative path like "agents/test-generator.md"
