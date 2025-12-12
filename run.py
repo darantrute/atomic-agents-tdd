@@ -748,6 +748,8 @@ TRUE Agent-First Architecture (Tools-Based):
 Examples:
   python run.py "Create a /api/health endpoint"
   python run.py "Add UK postcode validation utility"
+  python run.py --spec specification.txt        # Read from file (handles large specs)
+  python run.py --continue                      # Resume interrupted pipeline
         """,
     )
 
@@ -756,7 +758,14 @@ Examples:
         type=str,
         nargs='?',
         default=None,
-        help="Task description (not needed for --continue)",
+        help="Task description (not needed for --continue or --spec)",
+    )
+
+    parser.add_argument(
+        "--spec",
+        type=Path,
+        default=None,
+        help="Read task from specification file (avoids argument length limits)",
     )
 
     parser.add_argument(
@@ -793,9 +802,22 @@ Examples:
             print("🔄 Resuming pipeline from progress.txt...")
             asyncio.run(pipeline.run_continuation())
         else:
-            if not args.task:
-                parser.error("task is required unless using --continue")
-            asyncio.run(pipeline.run(args.task))
+            # Determine task source: --spec flag or positional argument
+            if args.spec:
+                # Read task from specification file
+                if not args.spec.exists():
+                    print(f"❌ Error: Specification file not found: {args.spec}")
+                    sys.exit(1)
+
+                print(f"📄 Reading specification from: {args.spec}")
+                task = args.spec.read_text()
+                print(f"   Size: {len(task)} characters")
+            elif args.task:
+                task = args.task
+            else:
+                parser.error("task is required unless using --continue or --spec")
+
+            asyncio.run(pipeline.run(task))
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user")
         sys.exit(130)
